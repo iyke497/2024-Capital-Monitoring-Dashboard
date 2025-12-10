@@ -68,7 +68,7 @@ class APIClient:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching data from {self.survey_type}: {e}")
+            print(f"API returned error: {response.status_code} {response.text[:300]}")
             return {'status': False, 'data': {'results': []}}
     
     def fetch_all_responses(self) -> list:

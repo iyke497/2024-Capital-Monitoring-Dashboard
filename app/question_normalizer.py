@@ -129,34 +129,40 @@ def get_field_name_for_question(question_text: str) -> str:
 
 def extract_answer_by_normalized_text(answers: list, target_field: str):
     """
-    Extract answer by looking for the normalized question text
-    
-    Args:
-        answers: List of answer dictionaries
-        target_field: The target database field name
-        
-    Returns:
-        The answer value or None
+    Extract answer by normalized question text, safe against malformed data.
     """
-    # Find the standard question text for this field
+
+    # 1️⃣ Validate answers list
+    if not isinstance(answers, list):
+        return None
+
+    # 2️⃣ Determine standard text looked up for this field
     standard_text = None
     for text, field in STANDARD_QUESTION_FORMS.items():
         if field == target_field:
             standard_text = text
             break
-    
+
     if not standard_text:
         return None
-    
-    # Search through answers
+
+    # 3️⃣ Iterate through answers safely
     for answer in answers:
-        question_data = answer.get('question', {})
-        question_text = question_data.get('text', '')
-        
-        # Normalize the question text from the answer
-        normalized = normalize_question_text(question_text)
-        
+        # Skip non-dicts
+        if not isinstance(answer, dict):
+            continue
+
+        question_data = answer.get("question") or {}
+        if not isinstance(question_data, dict):
+            # Some responses have question=None
+            continue
+
+        question_text = question_data.get("text") or ""
+
+        # Normalize defensively: normalize_question_text must accept empty string
+        normalized = normalize_question_text(question_text) or ""
+
         if normalized == standard_text:
-            return answer.get('body')
-    
+            return answer.get("body")
+
     return None
