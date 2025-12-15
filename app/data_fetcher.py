@@ -5,9 +5,10 @@ from typing import Dict, Any, Optional
 from app.api_client import APIClient
 from app.models import SurveyResponse, SurveyMetadata, db
 from app.question_normalizer import extract_answer_by_normalized_text
+from app.data_cleaner import DataCleaner
 
 def parse_amount_value(value: Any) -> Optional[float]:
-        """
+    """
         Normalize various money/amount representations into a float.
         Handles:
         - None / empty -> None
@@ -15,50 +16,78 @@ def parse_amount_value(value: Any) -> Optional[float]:
         - plain numeric strings ("100000000" or "100,000,000.00")
         - dicts like {"year": "2024", "amount": "100000000.00"}
         - JSON strings of those dicts
-        """
-        if value is None:
+    """
+    if value is None:
+        return None
+
+    # Already numeric
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    # Dict: look for 'amount'
+    if isinstance(value, dict):
+        inner = (
+            value.get("amount")
+            or value.get("value")
+            or value.get("Amount")
+        )
+        return parse_amount_value(inner)
+
+    # Strings
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
             return None
 
-        # Already numeric
-        if isinstance(value, (int, float)):
-            return float(value)
-
-        # Dict: look for 'amount'
-        if isinstance(value, dict):
-            inner = (
-                value.get("amount")
-                or value.get("value")
-                or value.get("Amount")
-            )
-            return parse_amount_value(inner)
-
-        # Strings
-        if isinstance(value, str):
-            text = value.strip()
-            if not text:
-                return None
-
-            # Try JSON object string
-            if text.startswith("{") and text.endswith("}"):
-                try:
-                    obj = json.loads(text)
-                except Exception:
-                    obj = None
-                if isinstance(obj, dict):
-                    return parse_amount_value(obj)
-
-            # Fallback: strip non-numeric chars (keep digits, dot, minus)
-            cleaned = re.sub(r"[^0-9.\-]", "", text)
-            if not cleaned:
-                return None
+        # Try JSON object string
+        if text.startswith("{") and text.endswith("}"):
             try:
-                return float(cleaned)
-            except ValueError:
-                return None
+                obj = json.loads(text)
+            except Exception:
+                obj = None
+            if isinstance(obj, dict):
+                return parse_amount_value(obj)
 
-        # Anything else (lists etc.) – treat as no value for now
+        # Fallback: strip non-numeric chars (keep digits, dot, minus)
+        cleaned = re.sub(r"[^0-9.\-]", "", text)
+        if not cleaned:
+            return None
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+
+    # Anything else (lists etc.) – treat as no value for now
+    return None
+
+def convert_to_boolean(value: Any) -> Optional[bool]:
+    """
+        Convert various representations to boolean.
+        Handles:
+        - None -> None
+        - Boolean values (True/False)
+        - Strings: "YES"/"NO", "yes"/"no", "TRUE"/"FALSE", "true"/"false", "1"/"0"
+        - Integers: 1/0
+    """
+
+    if value is None:
         return None
-        
+    
+    if isinstance(value, bool):
+        return value
+    
+    if isinstance(value, str):
+        normalized = value.strip().upper()
+        if normalized in ["YES", "TRUE", "1", "Y"]:
+            return True
+        if normalized in ["NO", "FALSE", "0", "N"]:
+            return False
+    
+    if isinstance(value, (int, float)):
+        return bool(value)
+    
+    # If we can't convert it, return None
+    return None
 
 class DataFetcher:
     """Handle data fetching and storage"""
@@ -149,10 +178,10 @@ class DataFetcher:
             "project_name": extract_answer_by_normalized_text(all_answers, "project_name"),
             "mda_name": extract_answer_by_normalized_text(all_answers, "mda_name"),
             "sub_projects": extract_answer_by_normalized_text(all_answers, "sub_projects"),
-            "strategic_objective": extract_answer_by_normalized_text(all_answers, "strategic_objectives"),
-            "key_performance_indicators": extract_answer_by_normalized_text(all_answers, "kpis"),
+            "strategic_objective": extract_answer_by_normalized_text(all_answers, "strategic_objective"),
+            "key_performance_indicators": extract_answer_by_normalized_text(all_answers, "key_performance_indicators"),
             "project_type": extract_answer_by_normalized_text(all_answers, "project_type"),
-            "project_deliverables": extract_answer_by_normalized_text(all_answers, "deliverables"),
+            "project_deliverables": extract_answer_by_normalized_text(all_answers, "project_deliverables"),
             "execution_method": extract_answer_by_normalized_text(all_answers, "execution_method"),
 
             # === SECTION 3: CONTRACTOR INFORMATION ===
@@ -171,7 +200,7 @@ class DataFetcher:
                 extract_answer_by_normalized_text(all_answers, "amount_utilized")
             ),
             "total_cost_planned": parse_amount_value(
-                extract_answer_by_normalized_text(all_answers, "total_planned_cost")
+                extract_answer_by_normalized_text(all_answers, "total_cost_planned")
             ),
             "total_financial_commitment": parse_amount_value(
                 extract_answer_by_normalized_text(all_answers, "total_financial_commitment")
@@ -180,7 +209,16 @@ class DataFetcher:
                 extract_answer_by_normalized_text(all_answers, "completion_cert_amount")
             ),
 
-            # (...rest of your fields unchanged...)
+            # === SECTION 5: PROJECT STATUS AND TIMELINES ===
+            "project_status": extract_answer_by_normalized_text(all_answers, "project_status"),
+            "start_date": extract_answer_by_normalized_text(all_answers, "start_date"),
+            "end_date": extract_answer_by_normalized_text(all_answers, "end_date"),
+
+            # === SECTION 6: ACHIEVEMENTS & CERTIFICATIONS ===
+            "project_achievements": extract_answer_by_normalized_text(all_answers, "project_achievements"),
+
+            "completion_cert_issued": convert_to_boolean(extract_answer_by_normalized_text(all_answers, "completion_cert_issued")),
+            "job_completion_certificate": extract_answer_by_normalized_text(all_answers, "job_completion_certificate"),
 
             # === SECTION 7: GEOGRAPHICAL INFORMATION ===
             "state": extract_answer_by_normalized_text(all_answers, "state"),
@@ -207,6 +245,9 @@ class DataFetcher:
                     ).date()
                 except (ValueError, TypeError):
                     processed_data[field] = None
+
+        # TODO: Apply data cleaning before returning
+        processed_data = DataCleaner.clean_processed_data(processed_data)
 
         return processed_data
 

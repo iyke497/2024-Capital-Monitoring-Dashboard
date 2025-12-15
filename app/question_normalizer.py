@@ -4,60 +4,33 @@ Utility for normalizing survey question text across different surveys
 """
 
 QUESTION_NORMALIZATION = {
-    # ===== SURVEY 1 TO STANDARD =====
-    "Project Stautus": "Project Status",
-
-    # Remove question marks from location questions
-    "STATE?": "STATE",
-    "LGA?": "LGA",
-    "WARD?": "WARD",
-
     # Remove year suffixes from financial questions
     "PROJECT APPROPRIATION 2024": "PROJECT APPROPRIATION",
     "AMOUNT RELEASED 2024": "AMOUNT RELEASED",
     "AMOUNT UTILIZED 2024": "AMOUNT UTILIZED",
-
-    # Standardize case
-    "What are the challenges and recommendations": 
-        "WHAT ARE THE CHALLENGES AND RECOMMENDATIONS",
-
-    # ===== SURVEY 2 TO STANDARD =====
-    "Project Execution": "PROJECT EXECUTION",
-
-    # ===== BIDIRECTIONAL STANDARD FORMS =====
-    "Project Status": "Project Status",
-    "PROJECT EXECUTION": "PROJECT EXECUTION",
-    "STATE": "STATE",
-    "LGA": "LGA",
-    "WARD": "WARD",
-    "PROJECT APPROPRIATION": "PROJECT APPROPRIATION",
-    "AMOUNT RELEASED": "AMOUNT RELEASED",
-    "AMOUNT UTILIZED": "AMOUNT UTILIZED",
-    "WHAT ARE THE CHALLENGES AND RECOMMENDATIONS":
-        "WHAT ARE THE CHALLENGES AND RECOMMENDATIONS",
+    "TOTAL COST OF PROJECT PLANNED 2024": "TOTAL COST OF PROJECT PLANNED"
 }
-
 
 STANDARD_QUESTION_FORMS = {
     # Project Details
     "PROJECT NAME": "project_name",
-    "Name of MDA": "mda_name",
+    "NAME OF MDA": "mda_name",
     "SUB-PROJECT/ACTIVITY": "sub_projects",
-    "STRATEGIC OBJECTIVES IN ACCORDANCE WITH NDP": "strategic_objectives",
-    "Key Performance Indicators": "kpis",
-    "Project Type": "project_type",
-    "Project Deliverables": "deliverables",
+    "STRATEGIC OBJECTIVES IN ACCORDANCE WITH NDP": "strategic_objective",
+    "KEY PERFORMANCE INDICATORS": "key_performance_indicators",
+    "PROJECT TYPE": "project_type",
+    "PROJECT DELIVERABLES": "project_deliverables",
     "PROJECT EXECUTION": "execution_method",
     "CONTRACTOR RC NUMBERS": "contractor_rc_numbers",
     "CONTRACTOR NAME": "contractor_name",
     "CERTIFICATE OF AWARD": "award_certificate",
-    "Project Categorisation": "project_category",
+    "PROJECT CATEGORIZATION": "project_category",
 
     # Financial Details
     "PROJECT APPROPRIATION": "appropriation_amount",
     "AMOUNT RELEASED": "amount_released",
     "AMOUNT UTILIZED": "amount_utilized",
-    "TOTAL COST OF PROJECT PLANNED": "total_planned_cost",
+    "TOTAL COST OF PROJECT PLANNED": "total_cost_planned",
     "TOTAL FINANCIAL COMMITMENT SINCE INCEPTION": "total_financial_commitment",
 
     # Media / Documents
@@ -65,16 +38,16 @@ STANDARD_QUESTION_FORMS = {
     "OTHER RELEVANT DOCUMENTS": "other_documents",
 
     # Certificates
-    "JOB COMPLETION CERTIFICATE ISSUED": "completion_certificate_issued",
-    "JOB COMPLETION CERTIFICATE": "completion_certificate",
-    "TOTAL AMOUNT IN APPROVED PROJECT COMPLETION CERTIFICATE": "completion_certificate_amount",
+    "JOB COMPLETION CERTIFICATE ISSUED": "completion_cert_issued",
+    "JOB COMPLETION CERTIFICATE": "job_completion_certificate",
+    "TOTAL AMOUNT IN APPROVED PROJECT COMPLETION CERTIFICATE": "completion_cert_amount",
 
     # Implementation Details
-    "Project Status": "project_status",
+    "PROJECT STATUS": "project_status",
     "START DATE": "start_date",
     "END DATE": "end_date",
-    "PERCENTAGE COMPLETED %": "percentage_completed",
-    "List Project Achievements": "achievements",
+    "PERCENTAGE COMPLETED": "percentage_completed",
+    "LIST PROJECT ACHIEVEMENTS": "project_achievements",
     "GEOLOCATIONS": "geolocations",
     "STATE": "state",
     "LGA": "lga",
@@ -88,13 +61,13 @@ STANDARD_QUESTION_FORMS = {
 
 def normalize_question_text(question_text: str) -> str:
     """
-    Normalize question text to standard form
+        Normalize question text to standard form
     
-    Args:
-        question_text: Original question text from API
+        Args:
+            question_text: Original question text from API
         
-    Returns:
-        Normalized question text
+        Returns:
+            Normalized question text
     """
     if not question_text:
         return ""
@@ -115,13 +88,13 @@ def normalize_question_text(question_text: str) -> str:
 
 def get_field_name_for_question(question_text: str) -> str:
     """
-    Get the database field name for a question
-    
-    Args:
-        question_text: Original question text
+        Get the database field name for a question
         
-    Returns:
-        Database field name or None if not mapped
+        Args:
+            question_text: Original question text
+            
+        Returns:
+            Database field name or None if not mapped
     """
     normalized = normalize_question_text(question_text)
     return STANDARD_QUESTION_FORMS.get(normalized)
@@ -158,11 +131,23 @@ def extract_answer_by_normalized_text(answers: list, target_field: str):
             continue
 
         question_text = question_data.get("text") or ""
+        question_type = question_data.get("question_type") or ""
 
         # Normalize defensively: normalize_question_text must accept empty string
         normalized = normalize_question_text(question_text) or ""
 
         if normalized == standard_text:
+            # Special case 1: MDA (which is structured)
+            if question_type == "mda":
+                verbose_body = answer.get("verbose_body")
+                if verbose_body and isinstance(verbose_body, list) and len(verbose_body) > 0:
+                    return verbose_body[0].get("name")
+            
+            # Special case 2: File uploads
+            if question_type == "file":
+                return answer.get("files")
+
+            # Default case
             return answer.get("body")
 
     return None

@@ -1,4 +1,5 @@
 from datetime import datetime
+from sqlalchemy.dialects.sqlite import JSON
 from app.database import db
 
 class SurveyResponse(db.Model):
@@ -28,6 +29,8 @@ class SurveyResponse(db.Model):
     # ===== SECTION 2: PROJECT BASIC INFORMATION =====
     project_categorisation = db.Column(db.String(100))  # Capital/Constituency Project
     project_name = db.Column(db.Text)
+    ergp_code = db.Column(db.String(20))
+    parent_ministry = db.Column(db.String(250))
     mda_name = db.Column(db.String(200))
     sub_projects = db.Column(db.Text)  # SUB-PROJECT/ACTIVITY
     strategic_objective = db.Column(db.Text)
@@ -39,7 +42,7 @@ class SurveyResponse(db.Model):
     # ===== SECTION 3: CONTRACTOR INFORMATION =====
     contractor_rc_numbers = db.Column(db.Text)
     contractor_name = db.Column(db.Text)
-    award_certificate = db.Column(db.String(10))  # CERTIFICATE OF AWARD
+    award_certificate = db.Column(JSON, nullable=True)  # CERTIFICATE OF AWARD
     
     # ===== SECTION 4: FINANCIAL INFORMATION =====
     project_appropriation_2024 = db.Column(db.Numeric(20, 2))
@@ -56,7 +59,7 @@ class SurveyResponse(db.Model):
     # ===== SECTION 6: IMPLEMENTATION PROGRESS =====
     project_achievements = db.Column(db.Text)
     completion_cert_issued = db.Column(db.Boolean)  # JOB COMPLETION CERTIFICATE ISSUED
-    job_completion_certificate = db.Column(db.String(10))  # Certificate file status
+    job_completion_certificate = db.Column(JSON, nullable=True)  # Certificate file status
     completion_cert_amount = db.Column(db.Numeric(20, 2))  # Amount in completion certificate
     
     # ===== SECTION 7: GEOGRAPHICAL INFORMATION =====
@@ -66,8 +69,8 @@ class SurveyResponse(db.Model):
     geolocations = db.Column(db.Text)
     
     # ===== SECTION 8: DOCUMENTS & ATTACHMENTS =====
-    project_pictures = db.Column(db.Text)  # PROJECT PICTURES
-    other_documents = db.Column(db.Text)  # OTHER RELEVANT DOCUMENTS
+    project_pictures = db.Column(JSON, nullable=True)  # PROJECT PICTURES
+    other_documents = db.Column(JSON, nullable=True)  # OTHER RELEVANT DOCUMENTS
     
     # ===== SECTION 9: CHALLENGES & FEEDBACK =====
     challenges_recommendations = db.Column(db.Text)
@@ -86,6 +89,8 @@ class SurveyResponse(db.Model):
         db.Index('idx_project_type', 'project_type'),
         db.Index('idx_state_lga', 'state', 'lga'),
         db.Index('idx_created_at', 'created_at'),
+        db.Index('idx_ergp_code', 'ergp_code'),
+        db.Index('idx_parent_ministry', 'parent_ministry'),
     )
     
     def to_dict(self, include_raw_data=False):
@@ -106,7 +111,9 @@ class SurveyResponse(db.Model):
             # Section 2: Project Basic Information
             'project_categorisation': self.project_categorisation,
             'project_name': self.project_name,
+            'ergp_code': self.ergp_code,
             'mda_name': self.mda_name,
+            'parent_ministry': self.parent_ministry,
             'sub_projects': self.sub_projects,
             'strategic_objective': self.strategic_objective,
             'key_performance_indicators': self.key_performance_indicators,
@@ -178,7 +185,6 @@ class SurveyResponse(db.Model):
                 metrics['utilization_efficiency'] = (float(self.amount_utilized_2024) / float(self.amount_released_2024)) * 100
         
         return metrics
-
 
 class SurveyMetadata(db.Model):
     """Store metadata about fetched surveys"""
