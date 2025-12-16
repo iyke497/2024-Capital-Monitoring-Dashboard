@@ -1,9 +1,10 @@
 import re
 import json
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from sqlalchemy import func, case, distinct
 from app.api_client import APIClient
-from app.models import SurveyResponse, SurveyMetadata, db
+from app.models import SurveyResponse, SurveyMetadata, BudgetProject2024, db
 from app.question_normalizer import extract_answer_by_normalized_text
 from app.data_cleaner import DataCleaner
 
@@ -328,3 +329,70 @@ class DataFetcher:
             metadata.total_responses = survey_info.get('no_of_responses', 0)
         
         db.session.commit()
+
+
+class ComplianceMetrics:
+
+    @staticmethod
+    def calculate_mda_compliance_data() -> List[Dict[str, Any]]:
+        """
+        Calculates the MDA-level project compliance rate by joining Survey Responses
+        (Numerator) with Budget Projects (Denominator).
+        
+        Returns:
+            A list of dictionaries containing compliance data per MDA.
+        """
+        # 1. Subquery for Reported Projects (Numerator)
+        # Count the number of UNIQUE ERGP codes reported per MDA
+        reported_subquery = db.session.query(
+            SurveyResponse.mda_name.label('mda_name'),
+            func.count(distinct(SurveyResponse.ergp_code)).label('reported_projects')
+        ).group_by(
+            SurveyResponse.mda_name
+        ).subquery()
+        # 
+
+        # 2. Subquery for Expected Projects (Denominator)
+        # Count the number of UNIQUE ERGP codes expected per Agency
+        expected_subquery = db.session.query(
+            BudgetProject2024.agency_normalized.label('mda_name'),
+            func.count(distinct(BudgetProject2024.code)).label('expected_projects')
+        ).group_by(
+            BudgetProject2024.agency_normalized
+        ).subquery()
+
+        # 3. Final Join and Calculation
+        # Join the two subqueries and perform the calculation
+        
+        # We use FULL OUTER JOIN to capture MDAs that only appear in the budget 
+        # (compliance rate of 0) and MDAs that only appear in the survey (expected count 0).
+        
+        results = db.session.query(
+            func.coalesce(expected_subquery.c.mda_name, reported_subquery.c.mda_name).label('mda_name'),
+            func.coalesce(expected_subquery.c.expected_projects, 0).label('expected'),
+            func.coalesce(reported_subquery.c.reported_projects, 0).label('reported')
+        ).outerjoin(
+            reported_subquery, 
+            expected_subquery.c.mda_name == reported_subquery.c.mda_name
+        ).all()
+        
+        # 4. Post-processing to calculate percentage and format for JS
+        compliance_data = []
+        for row in results:
+            expected = row.expected
+            reported = row.reported
+            
+            # Calculate percentage, handle division by zero
+            if expected > 0:
+                compliance_rate = (reported / expected) * 100
+            else:
+                compliance_rate = 0.0 # If 0 projects expected, compliance is not meaningful, set to 0.
+
+            compliance_data.append({
+                'mda_name': row.mda_name,
+                'expected_projects': expected,
+                'reported_projects': reported,
+                'compliance_rate_pct': round(compliance_rate, 2)
+            })
+            
+        return compliance_data

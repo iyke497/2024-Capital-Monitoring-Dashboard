@@ -1,6 +1,11 @@
 import re
+import os
+import pandas as pd
+from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
 from difflib import get_close_matches
+from app.models import BudgetProject2024
+from app.database import db
 
 
 class DataCleaner:
@@ -229,6 +234,90 @@ class DataCleaner:
         # The ergp_code_normalized is the second element
         return cleaned_name, ergp_code_normalized
     
+    # Budget Data Ingestion
+    @classmethod
+    def ingest_and_normalize_budget_data(cls, file_path: str):
+        """
+        Ingests budget data, normalizes MDA names, and writes duplicate ERGP codes 
+        to a separate reconciliation file for manual review.
+        """
+
+        print(f"Starting ingestion of budget data from {file_path}...")
+        df = pd.read_excel(file_path)
+
+        # 1. Rename and Initial Cleanup (Same as before)
+        df.rename(columns={
+            'code': 'code', 
+            'project_name': 'project_name', 
+            'status_type': 'status_type', 
+            'appropriation': 'appropriation', 
+            'ministry': 'ministry', 
+            'agency': 'agency'
+        }, inplace=True)
+        
+        # Drop rows where 'agency' or 'code' is missing, as they are mandatory
+        df.dropna(subset=['agency', 'code'], inplace=True)
+        
+        # Ensure appropriation is numeric
+        df['appropriation'] = pd.to_numeric(df['appropriation'], errors='coerce')
+
+
+        # 2. Identify and Isolate Duplicates
+        # Use duplicated() to mark all rows that are duplicates based on the 'code' column.
+        # We keep the *first* instance for insertion and mark all others as duplicates to be reconciled.
+        is_duplicate = df.duplicated(subset=['code'], keep='first')
+        
+        df_duplicates = df[is_duplicate].copy()
+        df_unique = df[~is_duplicate].copy() # Invert the mask to get unique rows (the ones to insert)
+        
+        rows_total = len(df)
+        rows_to_insert = len(df_unique)
+        rows_to_reconcile = len(df_duplicates)
+        
+        print(f"Total rows read: {rows_total}")
+        print(f"Unique ERGP codes identified for insertion: {rows_to_insert}")
+        print(f"Duplicate ERGP codes found (set aside): {rows_to_reconcile}")
+
+
+        # 3. Write Duplicates to Reconciliation File
+        if rows_to_reconcile > 0:
+            # Define the output path relative to the current working directory
+            reconciliation_file = 'budget_duplicates_reconciliation.txt'
+            
+            with open(reconciliation_file, 'w') as f:
+                f.write(f"--- Budget Duplicate Reconciliation File ({datetime.now().isoformat()}) ---\n\n")
+                f.write(f"The following {rows_to_reconcile} rows contain ERGP codes that already exist.\n")
+                f.write("Only the FIRST instance of each unique code was kept for insertion.\n\n")
+                
+                # Write the details of the duplicate rows
+                f.write(df_duplicates.to_string(index=False))
+                
+            print(f"🚨 Duplicates saved to: {os.path.abspath(reconciliation_file)}")
+
+
+        # 4. Apply Cleaning and Mapping (Only to the Unique Data for Insertion)
+        print("Applying MDA normalization and mapping to unique data...")
+        
+        def map_and_normalize(row):
+            # We reuse the full map function to get the best normalized name
+            normalized_mda, parent_ministry = cls.map_mda_to_ministry(row['agency'])
+            if normalized_mda:
+                return normalized_mda
+            return cls.normalize_text(row['agency'])
+
+        df_unique['agency_normalized'] = df_unique.apply(map_and_normalize, axis=1)
+
+        # 5. Prepare and Save to Database
+        df_to_insert = df_unique[[
+            'code', 'project_name', 'status_type', 'appropriation', 
+            'ministry', 'agency', 'agency_normalized'
+        ]]
+        
+        print(f"Inserting {len(df_to_insert)} unique budget records into DB...")
+        db.session.bulk_insert_mappings(BudgetProject2024, df_to_insert.to_dict('records'))
+        db.session.commit()
+        print("Budget data ingestion complete.")
+
     # Apply cleaning
     @classmethod
     def clean_processed_data(cls, processed_data: Dict[str, Any]) -> Dict[str, Any]:
