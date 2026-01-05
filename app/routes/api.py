@@ -110,51 +110,51 @@ def get_stats():
 
 @api_bp.get("/responses")
 def get_responses():
-    """Get paginated survey responses"""
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 20, type=int)
-    survey_type = request.args.get("survey_type")
+    # 1. Capture DataTables specific parameters
+    draw = request.args.get("draw", type=int) # Unique ID for each request
+    start = request.args.get("start", 0, type=int) # Starting record index
+    length = request.args.get("length", 10, type=int) # Number of records per page
+    search_value = request.args.get("search[value]", "") # Global search term
+    
+    # Calculate current page for SQLAlchemy pagination
+    page = (start // length) + 1
 
     query = SurveyResponse.query
 
-    if survey_type:
-        query = query.filter_by(survey_type=survey_type)
+    # 2. Add Global Filtering
+    if search_value:
+        query = query.filter(
+            (SurveyResponse.project_name.ilike(f"%{search_value}%")) |
+            (SurveyResponse.mda_name.ilike(f"%{search_value}%")) |
+            (SurveyResponse.ergp_code.ilike(f"%{search_value}%"))
+        )
 
-    paginated = query.paginate(page=page, per_page=per_page, error_out=False)
+    # 3. Get total counts for DataTables metadata
+    records_total = SurveyResponse.query.count()
+    records_filtered = query.count()
+
+    paginated = query.paginate(page=page, per_page=length, error_out=False)
 
     responses = []
     for item in paginated.items:
-        responses.append(
-            {
-                "public_id": item.public_id,
-                "name": item.name,
-                "survey_name": item.survey_name,
-                "survey_type": item.survey_type,
-                "organization_name": item.organization_name,
-                "project_name": item.project_name,
-                "mda_name": item.mda_name,
-                "project_type": item.project_type,
-                "percentage_completed": item.percentage_completed,
-                "project_appropriation_2024": float(item.project_appropriation_2024)
-                if item.project_appropriation_2024
-                else None,
-                "amount_released_2024": float(item.amount_released_2024)
-                if item.amount_released_2024
-                else None,
-                "created": item.created.isoformat() if item.created else None,
-            }
-        )
+        responses.append({
+            "project_name": item.project_name,
+            "ergp_code": item.ergp_code,
+            "mda_name": item.mda_name,
+            "survey_type": item.survey_type,
+            "percentage_completed": item.percentage_completed,
+            "project_appropriation_2024": float(item.project_appropriation_2024) if item.project_appropriation_2024 else 0,
+            "amount_released_2024": float(item.amount_released_2024) if item.amount_released_2024 else 0,
+            "created": item.created.isoformat() if item.created else None,
+        })
 
-    return jsonify(
-        {
-            "responses": responses,
-            "total": paginated.total,
-            "page": paginated.page,
-            "pages": paginated.pages,
-            "per_page": paginated.per_page,
-        }
-    )
-
+    # 4. Return format required by DataTables
+    return jsonify({
+        "draw": draw,
+        "recordsTotal": records_total,
+        "recordsFiltered": records_filtered,
+        "data": responses
+    })
 
 # Compliance and Metrics
 @api_bp.get("/compliance/mda")
