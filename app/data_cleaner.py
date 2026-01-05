@@ -298,14 +298,14 @@ class DataCleaner:
         # 4. Apply Cleaning and Mapping (Only to the Unique Data for Insertion)
         print("Applying MDA normalization and mapping to unique data...")
         
-        def map_and_normalize(row):
-            # We reuse the full map function to get the best normalized name
-            normalized_mda, parent_ministry = cls.map_mda_to_ministry(row['agency'])
-            if normalized_mda:
-                return normalized_mda
-            return cls.normalize_text(row['agency'])
+        # def map_and_normalize(row):
+            #     # We reuse the full map function to get the best normalized name
+            #     normalized_mda, parent_ministry = cls.map_mda_to_ministry(row['agency'])
+            #     if normalized_mda:
+            #         return normalized_mda
+            #     return cls.normalize_text(row['agency'])
 
-        df_unique['agency_normalized'] = df_unique.apply(map_and_normalize, axis=1)
+        df_unique['agency_normalized'] = df_unique['agency'].apply(cls.normalize_text)
 
         # 5. Prepare and Save to Database
         df_to_insert = df_unique[[

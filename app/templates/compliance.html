@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MDA Compliance Metrics</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css">
+    <style>
+        /* Simple table styling for better readability */
+        table { width: 100%; margin-top: 20px; }
+        th { cursor: pointer; }
+        .container { width: 90%; margin: 0 auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MDA Compliance Metrics</h1>
+            <nav>
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="/compliance">MDA Compliance Metrics</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <main>
+            <h3>Project Compliance Rates per MDA</h3>
+            <p id="loading-message">Loading compliance data...</p>
+            
+            <table id="compliance-table">
+                <thead>
+                    <tr>
+                        <th data-sort="mda_name">MDA/Agency ↕</th>
+                        <th data-sort="expected_projects">Expected Projects (2024 Appropriation) ↕</th>
+                        <th data-sort="reported_projects">Unique Reported Projects (Survey) ↕</th>
+                        <th data-sort="total_responses">Total Responses ↕</th>
+                        <th data-sort="compliance_rate_pct">Compliance Rate (%) ↕</th>
+                    </tr>
+                </thead>
+                <tbody id="compliance-table-body">
+                    </tbody>
+            </table>
+        </main>
+
+        <footer>
+            <p>&copy; 2025 Data Project</p>
+        </footer>
+    </div>
+
+    <script>
+        const API_ENDPOINT = '/api/compliance/mda';
+        let currentData = [];
+        let sortColumn = 'compliance_rate_pct'; 
+        let sortDirection = 'desc';
+
+        // Function to fetch data from the API
+        async function fetchComplianceData() {
+            try {
+                const response = await fetch(API_ENDPOINT);
+                const result = await response.json();
+
+                document.getElementById('loading-message').style.display = 'none';
+
+                if (result.success && result.data) {
+                    currentData = result.data;
+                    renderTable(currentData);
+                    addSortListeners();
+                } else {
+                    document.getElementById('compliance-table-body').innerHTML = `<tr><td colspan="4">Error loading data: ${result.message}</td></tr>`;
+                }
+            } catch (error) {
+                document.getElementById('compliance-table-body').innerHTML = `<tr><td colspan="4">Failed to connect to API: ${error.message}</td></tr>`;
+            }
+        }
+
+        // Function to render the table rows
+        function renderTable(data) {
+            const tbody = document.getElementById('compliance-table-body');
+            tbody.innerHTML = ''; // Clear existing rows
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4">No compliance data available.</td></tr>';
+                return;
+            }
+
+            // Sort data before rendering
+            sortData(data, sortColumn, sortDirection);
+
+            data.forEach(item => {
+                const row = tbody.insertRow();
+                row.insertCell().textContent = item.mda_name;
+                row.insertCell().textContent = item.expected_projects;
+                row.insertCell().textContent = item.reported_projects;
+                row.insertCell().textContent = item.total_responses;
+                row.insertCell().textContent = `${item.compliance_rate_pct.toFixed(2)}%`; // Format percentage
+            });
+        }
+
+        // Simple sorting function
+        function sortData(data, column, direction) {
+            data.sort((a, b) => {
+                const aVal = a[column];
+                const bVal = b[column];
+
+                if (direction === 'asc') {
+                    return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+                } else {
+                    return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+                }
+            });
+        }
+
+        // Add event listeners for table header sorting
+        function addSortListeners() {
+            document.querySelectorAll('#compliance-table th').forEach(header => {
+                header.addEventListener('click', () => {
+                    const column = header.getAttribute('data-sort');
+                    
+                    if (column === sortColumn) {
+                        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        sortColumn = column;
+                        sortDirection = 'asc'; // Default sort direction when changing columns
+                    }
+                    renderTable(currentData);
+                });
+            });
+        }
+
+        // Initialize the data load
+        document.addEventListener('DOMContentLoaded', fetchComplianceData);
+    </script>
+</body>
+</html>

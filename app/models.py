@@ -211,3 +211,20 @@ class SurveyMetadata(db.Model):
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
+
+class BudgetProject2024(db.Model):
+    """Stores the approved 2024 budget projects for compliance tracking."""
+    __tablename__ = 'budget_projects_2024'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(50), index=True, nullable=False, unique=True) # ERGP Code
+    project_name = db.Column(db.Text)
+    status_type = db.Column(db.String(100))
+    appropriation = db.Column(db.Numeric(20, 2))
+    
+    # Normalized fields for clean joining/aggregation
+    ministry = db.Column(db.String(250))
+    agency = db.Column(db.String(250))
+    agency_normalized = db.Column(db.String(250), index=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

@@ -1,7 +1,7 @@
 # app/routes/api.py
 from flask import Blueprint, jsonify, request
 from ..models import SurveyResponse, SurveyMetadata
-from ..data_fetcher import DataFetcher
+from ..data_fetcher import DataFetcher, ComplianceMetrics
 
 api_bp = Blueprint("api", __name__)
 
@@ -154,3 +154,21 @@ def get_responses():
             "per_page": paginated.per_page,
         }
     )
+
+
+# Compliance and Metrics
+@api_bp.get("/compliance/mda")
+def get_mda_compliance():
+    """Returns MDA-level compliance data for visualization."""
+    try:
+        compliance_data = ComplianceMetrics.calculate_mda_compliance_data()
+        
+        return jsonify({
+            "success": True,
+            "data": compliance_data
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error calculating compliance: {str(e)}"
+        }), 500

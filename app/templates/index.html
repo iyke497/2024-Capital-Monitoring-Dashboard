@@ -99,8 +99,13 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Survey Data Fetcher</h1>
-            <p>Fetch and visualize survey data from API endpoints</p>
+            <h1>Data Ingestion & Compliance Dashboard</h1>
+            <nav>
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="/compliance">MDA Compliance Metrics</a></li>
+                </ul>
+            </nav>
         </div>
         
         <div class="controls">
@@ -141,6 +146,8 @@
                 <thead>
                     <tr>
                         <th>Project Name</th>
+                        <th>ERGP_CODE</th>
+                        <th>Ministry</th>
                         <th>MDA</th>
                         <th>Survey Type</th>
                         <th>% Completed</th>
@@ -272,6 +279,8 @@
                         const row = document.createElement('tr');
                         row.innerHTML = `
                             <td>${item.project_name || 'N/A'}</td>
+                            <td>${item.ergp_code || 'N/A'}</td>
+                            <td>${item.parent_ministry || 'N/A'}</td> 
                             <td>${item.mda_name || 'N/A'}</td>
                             <td>${item.survey_type}</td>
                             <td>${item.percentage_completed || 'N/A'}</td>

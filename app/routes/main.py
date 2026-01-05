@@ -8,3 +8,8 @@ main_bp = Blueprint("main", __name__)
 def index():
     """Home page"""
     return render_template("index.html")
+
+@main_bp.route("/compliance")
+def compliance_metrics():
+    """Renders the compliance table page."""
+    return render_template("compliance.html")

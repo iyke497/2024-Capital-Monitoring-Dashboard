@@ -346,7 +346,9 @@ class ComplianceMetrics:
         # Count the number of UNIQUE ERGP codes reported per MDA
         reported_subquery = db.session.query(
             SurveyResponse.mda_name.label('mda_name'),
-            func.count(distinct(SurveyResponse.ergp_code)).label('reported_projects')
+            func.count(distinct(SurveyResponse.ergp_code)).label('reported_projects'),
+            # Counts the total number of survey forms submitted
+            func.count(SurveyResponse.id).label('total_responses')
         ).group_by(
             SurveyResponse.mda_name
         ).subquery()
@@ -370,7 +372,8 @@ class ComplianceMetrics:
         results = db.session.query(
             func.coalesce(expected_subquery.c.mda_name, reported_subquery.c.mda_name).label('mda_name'),
             func.coalesce(expected_subquery.c.expected_projects, 0).label('expected'),
-            func.coalesce(reported_subquery.c.reported_projects, 0).label('reported')
+            func.coalesce(reported_subquery.c.reported_projects, 0).label('reported'),
+            func.coalesce(reported_subquery.c.total_responses, 0).label('total_responses')
         ).outerjoin(
             reported_subquery, 
             expected_subquery.c.mda_name == reported_subquery.c.mda_name
@@ -392,6 +395,7 @@ class ComplianceMetrics:
                 'mda_name': row.mda_name,
                 'expected_projects': expected,
                 'reported_projects': reported,
+                'total_responses': row.total_responses,
                 'compliance_rate_pct': round(compliance_rate, 2)
             })
             
