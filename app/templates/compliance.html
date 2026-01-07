@@ -4,52 +4,117 @@
 {% block header %}MDA Compliance Metrics{% endblock %}
 
 {% block content %}
-    <h3>Project Compliance Rates per MDA</h3>
-    <p>This table tracks unique reported projects against the 2024 Appropriation expectations.</p>
-    
-    <table id="compliance-table" class="display" style="width:100%">
-        <thead>
-            <tr>
-                <th>MDA/Agency</th>
-                <th>Expected Projects (2024)</th>
-                <th>Unique Reported</th>
-                <th>Total Responses</th>
-                <th>Compliance Rate (%)</th>
-            </tr>
-        </thead>
-        <tbody>
-            </tbody>
-    </table>
+    <div class="row">
+        <div class="twelve columns">
+            <ul class="tab-nav" style="display: flex; list-style: none; border-bottom: 2px solid #eee; padding-bottom: 10px; gap: 20px;">
+                <li><a href="#" class="button tab-link active" onclick="showTab('mda-tab')">MDA Level</a></li>
+                <li><a href="#" class="button tab-link" onclick="showTab('ministry-tab')">Ministry Level</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <div id="mda-tab" class="tab-content">
+        <h3>Project Compliance per MDA</h3>
+        <table id="mda-table" class="display" style="width:100%">
+            <thead>
+                <tr>
+                    <th>MDA Name</th>
+                    <th>Parent Ministry</th>
+                    <th>Expected (Budget 2024)</th>
+                    <th>Reported (Survey)</th>
+                    <th>Total Submissions</th>
+                    <th>Compliance Rate (%)</th>
+                </tr>
+            </thead>
+        </table>
+    </div>
+
+    <div id="ministry-tab" class="tab-content" style="display:none;">
+        <h3>Ministry Summary Info</h3>
+        <table id="ministry-table" class="display" style="width:100%">
+            <thead>
+                <tr>
+                    <th>Ministry Name</th>
+                    <th>Reporting MDAs</th>
+                    <th>Total Responses</th>
+                    <th>Total Appropriation (2024)</th>
+                    <th>Avg. Completion (%)</th>
+                </tr>
+            </thead>
+        </table>
+    </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+function showTab(tabId) {
+    // Toggle Visibility
+    $('.tab-content').hide();
+    $(`#${tabId}`).show();
+    
+    // Toggle Button Styles
+    $('.tab-link').removeClass('button-primary');
+    $(`[onclick="showTab('${tabId}')"]`).addClass('button-primary');
+}
+
 $(document).ready(function() {
-    // Initializing the rich table
-    $('#compliance-table').DataTable({
-        "ajax": {
-            "url": "/api/compliance/mda",
-            "dataSrc": "data" // Points to the 'data' key in your JSON response
-        },
-        "columns": [
-            { "data": "mda_name" },
-            { "data": "expected_projects" },
-            { "data": "reported_projects" },
-            { "data": "total_responses" },
+    // 1. Initialize MDA Table
+    // Assign to a variable that is accessible to the click handler
+    window.mdaTable = $('#mda-table').DataTable({
+        ajax: { url: '/api/compliance/mda', dataSrc: 'data' },
+        columns: [
+            { data: 'mda_name' },
+            { data: 'parent_ministry', visible: false }, // Index 1
+            { data: 'expected_projects', className: 'dt-body-center' },
+            { data: 'reported_projects', className: 'dt-body-center' },
+            { data: 'total_responses', className: 'dt-body-center' },
             { 
-                "data": "compliance_rate_pct",
-                "render": function(data) {
-                    return `<strong>${data.toFixed(2)}%</strong>`;
+                data: 'compliance_rate_pct', 
+                render: function(data) {
+                    let color = data >= 80 ? '#2e7d32' : (data >= 50 ? '#f57c00' : '#d32f2f');
+                    return `<strong style="color: ${color}">${data.toFixed(2)}%</strong>`;
                 }
             }
-        ],
-        "order": [[4, "desc"]], // Default sort by Compliance Rate descending
-        "pageLength": 25,
-        "language": {
-            "search": "Filter by MDA Name:",
-            "loadingRecords": "Analyzing compliance metrics..."
-        }
+        ]
     });
+
+    // 2. Initialize Ministry Table
+    const ministryTable = $('#ministry-table').DataTable({
+        ajax: { url: '/api/compliance/ministry', dataSrc: 'data' },
+        columns: [
+            { data: 'ministry_name', className: 'clickable-min' },
+            { data: 'mda_count' },
+            { data: 'total_responses' },
+            { 
+                data: 'total_budget', 
+                render: $.fn.dataTable.render.number(',', '.', 2, '₦') 
+            },
+            { data: 'avg_completion', render: d => `<strong>${d}%</strong>` }
+        ]
+    });
+
+    // 3. Drill-Down Handler
+    $('#ministry-table tbody').on('click', 'tr', function() {
+        const rowData = ministryTable.row(this).data();
+        if (!rowData) return;
+
+        const minName = rowData.ministry_name;
+
+        // Filter the MDA table by the hidden parent_ministry column (index 1)
+        mdaTable.column(1).search(minName).draw();
+
+        showTab('mda-tab');
+        $('#mda-tab h3').html(`Agencies under: ${minName} <button class="button" onclick="resetMdaFilter()">Clear Filter</button>`);
+    });
+
+    // window.resetMdaFilter = function() {
+    //     mdaTable.column(1).search('').draw();
+    //     $('#mda-tab h3').html('Project Compliance per MDA');
+    // };
+    window.resetMdaFilter = function() {
+        window.mdaTable.column(1).search('').draw();
+        $('#mda-tab h3').html('Project Compliance per MDA');
+    };
 });
 </script>
 {% endblock %}

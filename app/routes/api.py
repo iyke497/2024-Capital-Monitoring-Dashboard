@@ -2,6 +2,7 @@
 from flask import Blueprint, jsonify, request
 from ..models import SurveyResponse, SurveyMetadata
 from ..data_fetcher import DataFetcher, ComplianceMetrics
+from ..data_cleaner import DataCleaner
 
 api_bp = Blueprint("api", __name__)
 
@@ -172,3 +173,51 @@ def get_mda_compliance():
             "success": False,
             "message": f"Error calculating compliance: {str(e)}"
         }), 500
+
+@api_bp.get("/compliance/ministry")
+def get_ministry_compliance():
+    """
+    Groups individual MDA responses into high-level Ministry buckets 
+    using the existing DataCleaner logic.
+    """
+    try:
+        all_responses = SurveyResponse.query.all()
+        ministry_groups = {}
+
+        for resp in all_responses:
+            # Leverage your existing cleaner logic
+            # This ensures the API uses the same fuzzy matching as your ingestion
+            _, parent_min = DataCleaner.map_mda_to_ministry(resp.mda_name)
+            parent_min = parent_min or "OTHER INDEPENDENT AGENCIES"
+
+            if parent_min not in ministry_groups:
+                ministry_groups[parent_min] = {
+                    "ministry_name": parent_min,
+                    "mda_names": set(),
+                    "response_count": 0,
+                    "total_budget": 0.0,
+                    "completion_scores": []
+                }
+            
+            group = ministry_groups[parent_min]
+            group["mda_names"].add(resp.mda_name)
+            group["response_count"] += 1
+            group["total_budget"] += float(resp.project_appropriation_2024 or 0)
+            if resp.percentage_completed:
+                group["completion_scores"].append(float(resp.percentage_completed))
+
+        # Format for the Rich Table
+        output = []
+        for name, stats in ministry_groups.items():
+            avg_comp = sum(stats["completion_scores"]) / len(stats["completion_scores"]) if stats["completion_scores"] else 0
+            output.append({
+                "ministry_name": name,
+                "mda_count": len(stats["mda_names"]),
+                "total_responses": stats["response_count"],
+                "total_budget": stats["total_budget"],
+                "avg_completion": round(avg_comp, 2)
+            })
+
+        return jsonify({"success": True, "data": output})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500

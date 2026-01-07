@@ -344,13 +344,15 @@ class ComplianceMetrics:
         """
         # 1. Subquery for Reported Projects (Numerator)
         # Count the number of UNIQUE ERGP codes reported per MDA
+       # 1. Update Numerator Subquery to include parent_ministry
         reported_subquery = db.session.query(
             SurveyResponse.mda_name.label('mda_name'),
+            SurveyResponse.parent_ministry.label('parent_ministry'), # ADD THIS
             func.count(distinct(SurveyResponse.ergp_code)).label('reported_projects'),
-            # Counts the total number of survey forms submitted
             func.count(SurveyResponse.id).label('total_responses')
         ).group_by(
-            SurveyResponse.mda_name
+            SurveyResponse.mda_name,
+            SurveyResponse.parent_ministry # AND THIS
         ).subquery()
         # 
 
@@ -370,10 +372,11 @@ class ComplianceMetrics:
         # (compliance rate of 0) and MDAs that only appear in the survey (expected count 0).
         
         results = db.session.query(
-            func.coalesce(expected_subquery.c.mda_name, reported_subquery.c.mda_name).label('mda_name'),
-            func.coalesce(expected_subquery.c.expected_projects, 0).label('expected'),
-            func.coalesce(reported_subquery.c.reported_projects, 0).label('reported'),
-            func.coalesce(reported_subquery.c.total_responses, 0).label('total_responses')
+        func.coalesce(expected_subquery.c.mda_name, reported_subquery.c.mda_name).label('mda_name'),
+        reported_subquery.c.parent_ministry.label('parent_ministry'), # ADD THIS
+        func.coalesce(expected_subquery.c.expected_projects, 0).label('expected'),
+        func.coalesce(reported_subquery.c.reported_projects, 0).label('reported'),
+        func.coalesce(reported_subquery.c.total_responses, 0).label('total_responses')
         ).outerjoin(
             reported_subquery, 
             expected_subquery.c.mda_name == reported_subquery.c.mda_name
@@ -382,6 +385,12 @@ class ComplianceMetrics:
         # 4. Post-processing to calculate percentage and format for JS
         compliance_data = []
         for row in results:
+            # Handle the case where the MDA hasn't reported anything yet
+            parent_min = row.parent_ministry
+            if not parent_min:
+                # Fallback: Try to map it using the mda_name
+                _, parent_min = DataCleaner.map_mda_to_ministry(row.mda_name)
+
             expected = row.expected
             reported = row.reported
             
@@ -393,6 +402,7 @@ class ComplianceMetrics:
 
             compliance_data.append({
                 'mda_name': row.mda_name,
+                'parent_ministry': parent_min or "OTHER INDEPENDENT AGENCIES",
                 'expected_projects': expected,
                 'reported_projects': reported,
                 'total_responses': row.total_responses,
