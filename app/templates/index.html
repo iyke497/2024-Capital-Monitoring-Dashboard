@@ -62,24 +62,46 @@ $(document).ready(function() {
     });
 
     // 2. Update last updated timestamp
-    function updateLastUpdatedTime() {
-        const now = new Date();
-        const timeString = now.toLocaleTimeString('en-US', { 
+    function updateLastUpdatedTime(date) {
+        const timestamp = date || new Date();
+        const timeString = timestamp.toLocaleTimeString('en-US', { 
             hour: '2-digit', 
             minute: '2-digit',
             hour12: true 
         });
-        const dateString = now.toLocaleDateString('en-US', {
+        const dateString = timestamp.toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric'
         });
         $('#last-updated').text(`Last updated: ${dateString} at ${timeString}`);
     }
 
-    // 3. Countdown timer to next update
+    // 3. Get server fetch status and sync countdown
+    function syncWithServer() {
+        $.get('/api/fetch/status', function(data) {
+            if (data.last_fetch) {
+                const lastFetch = new Date(data.last_fetch);
+                updateLastUpdatedTime(lastFetch);
+                
+                // Calculate next update time based on server's last fetch
+                nextUpdateTimer = lastFetch.getTime() + POLL_INTERVAL;
+            } else {
+                // No fetch has happened yet
+                nextUpdateTimer = Date.now() + POLL_INTERVAL;
+            }
+            
+            startCountdown();
+        }).fail(function() {
+            // Fallback if status endpoint fails
+            console.warn('Could not sync with server, using local timer');
+            nextUpdateTimer = Date.now() + POLL_INTERVAL;
+            startCountdown();
+        });
+    }
+
+    // 4. Countdown timer to next update
     function startCountdown() {
         clearInterval(countdownInterval);
-        nextUpdateTimer = Date.now() + POLL_INTERVAL;
         
         countdownInterval = setInterval(function() {
             const remaining = nextUpdateTimer - Date.now();
@@ -132,7 +154,7 @@ $(document).ready(function() {
         });
     }
 
-    // 6. Automatic polling function
+    // 7. Automatic polling function
     function autoFetchAllSurveys() {
         console.log('Auto-fetching surveys...');
         showUpdateStatus(true);
@@ -141,7 +163,17 @@ $(document).ready(function() {
             console.log('Auto-fetch successful:', res.message);
             table.ajax.reload();
             updateStats();
-            updateLastUpdatedTime();
+            
+            // Update with server's timestamp
+            if (res.fetched_at) {
+                const fetchTime = new Date(res.fetched_at);
+                updateLastUpdatedTime(fetchTime);
+                nextUpdateTimer = fetchTime.getTime() + POLL_INTERVAL;
+            } else {
+                updateLastUpdatedTime();
+                nextUpdateTimer = Date.now() + POLL_INTERVAL;
+            }
+            
             showUpdateStatus(false, true);
             startCountdown();
         })
@@ -159,6 +191,12 @@ $(document).ready(function() {
                 console.log('Cooldown active:', response.message);
                 $('#status-text').text('Data recently updated');
                 showUpdateStatus(false, null);
+                
+                // Sync with server's next available time
+                if (response.next_available) {
+                    nextUpdateTimer = new Date(response.next_available).getTime();
+                    startCountdown();
+                }
             }
             // Actual error
             else {
@@ -166,19 +204,18 @@ $(document).ready(function() {
                 showUpdateStatus(false, false);
             }
             
-            startCountdown(); // Continue countdown regardless
+            startCountdown();
         });
     }
 
-    // 7. Initial load
+    // 8. Initial load - sync with server first
     updateStats();
-    updateLastUpdatedTime();
-    startCountdown();
+    syncWithServer(); // This will set the correct countdown and last updated time
 
-    // 8. Set up automatic polling every hour
+    // 9. Set up automatic polling every hour
     setInterval(autoFetchAllSurveys, POLL_INTERVAL);
     
-    // 9. Optional: Fetch on initial page load
+    // 10. Optional: Fetch on initial page load
     // Uncomment the line below to fetch data when page first loads
     // autoFetchAllSurveys();
 });
