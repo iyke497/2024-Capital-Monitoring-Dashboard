@@ -5,8 +5,18 @@
 
 {% block content %}
 <div class="controls">
-    <button class="button-primary" onclick="fetchData('survey1')">Fetch Survey 1</button>
-    <button class="button-primary" onclick="fetchData('survey2')">Fetch Survey 2</button>
+    <div style="display: flex; align-items: center; gap: 15px;">
+        <span id="last-updated" style="color: #666; font-size: 14px; font-weight: 500;">
+            Last updated: Never
+        </span>
+        <span id="next-update" style="color: #999; font-size: 13px;">
+            Next update in: --
+        </span>
+    </div>
+    <div id="update-status" style="margin-top: 10px; padding: 8px 12px; background: #f0f0f0; border-radius: 4px; font-size: 13px; display: none;">
+        <span id="status-icon">⏳</span>
+        <span id="status-text">Updating...</span>
+    </div>
 </div>
 
 <div class="stats-cards">
@@ -31,6 +41,10 @@
 {% block scripts %}
 <script>
 $(document).ready(function() {
+    const POLL_INTERVAL = 60 * 60 * 1000; // 1 hour in milliseconds
+    let nextUpdateTimer;
+    let countdownInterval;
+    
     // 1. Initialize DataTable
     const table = $('#responses-table').DataTable({
         serverSide: true,
@@ -47,25 +61,126 @@ $(document).ready(function() {
         ]
     });
 
-    // 2. Refresh Stats
-    window.updateStats = function() {
+    // 2. Update last updated timestamp
+    function updateLastUpdatedTime() {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: true 
+        });
+        const dateString = now.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric'
+        });
+        $('#last-updated').text(`Last updated: ${dateString} at ${timeString}`);
+    }
+
+    // 3. Countdown timer to next update
+    function startCountdown() {
+        clearInterval(countdownInterval);
+        nextUpdateTimer = Date.now() + POLL_INTERVAL;
+        
+        countdownInterval = setInterval(function() {
+            const remaining = nextUpdateTimer - Date.now();
+            
+            if (remaining <= 0) {
+                $('#next-update').text('Next update in: updating now...');
+                return;
+            }
+            
+            const minutes = Math.floor(remaining / 60000);
+            const seconds = Math.floor((remaining % 60000) / 1000);
+            
+            if (minutes > 0) {
+                $('#next-update').text(`Next update in: ${minutes}m ${seconds}s`);
+            } else {
+                $('#next-update').text(`Next update in: ${seconds}s`);
+            }
+        }, 1000);
+    }
+
+    // 4. Show/hide update status
+    function showUpdateStatus(isUpdating, success = null) {
+        const statusDiv = $('#update-status');
+        const icon = $('#status-icon');
+        const text = $('#status-text');
+        
+        if (isUpdating) {
+            icon.text('⏳');
+            text.text('Fetching latest data...');
+            statusDiv.css('background', '#fff3cd').show();
+        } else if (success === true) {
+            icon.text('✓');
+            text.text('Successfully updated!');
+            statusDiv.css('background', '#d4edda').show();
+            setTimeout(() => statusDiv.fadeOut(), 3000);
+        } else if (success === false) {
+            icon.text('⚠');
+            text.text('Update failed - will retry next cycle');
+            statusDiv.css('background', '#f8d7da').show();
+            setTimeout(() => statusDiv.fadeOut(), 5000);
+        }
+    }
+
+    // 5. Refresh Stats
+    function updateStats() {
         $.get('/api/stats', function(data) {
             $('#total-responses').text(data.total_responses);
             $('#survey1-count').text(data.survey1_count);
             $('#survey2-count').text(data.survey2_count);
         });
-    };
+    }
 
-    // 3. Fetch Trigger
-    window.fetchData = function(type) {
-        $.post(`/api/fetch/${type}`, function(res) {
-            alert(res.message);
-            table.ajax.reload(); // Refresh the table
-            updateStats();      // Refresh the counters
+    // 6. Automatic polling function
+    function autoFetchAllSurveys() {
+        console.log('Auto-fetching surveys...');
+        showUpdateStatus(true);
+
+        $.post('/api/fetch/all', function(res) {
+            console.log('Auto-fetch successful:', res.message);
+            table.ajax.reload();
+            updateStats();
+            updateLastUpdatedTime();
+            showUpdateStatus(false, true);
+            startCountdown();
+        })
+        .fail(function(xhr) {
+            const response = xhr.responseJSON;
+            
+            // Handle gracefully if another user is already fetching
+            if (response?.in_progress) {
+                console.log('Another user is fetching data, skipping...');
+                $('#status-text').text('Another user is updating data...');
+                showUpdateStatus(false, null);
+            } 
+            // Handle cooldown period
+            else if (response?.cooldown) {
+                console.log('Cooldown active:', response.message);
+                $('#status-text').text('Data recently updated');
+                showUpdateStatus(false, null);
+            }
+            // Actual error
+            else {
+                console.error('Auto-fetch failed:', response?.message || 'Unknown error');
+                showUpdateStatus(false, false);
+            }
+            
+            startCountdown(); // Continue countdown regardless
         });
-    };
+    }
 
+    // 7. Initial load
     updateStats();
+    updateLastUpdatedTime();
+    startCountdown();
+
+    // 8. Set up automatic polling every hour
+    setInterval(autoFetchAllSurveys, POLL_INTERVAL);
+    
+    // 9. Optional: Fetch on initial page load
+    // Uncomment the line below to fetch data when page first loads
+    // autoFetchAllSurveys();
 });
 </script>
 {% endblock %}
