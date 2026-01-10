@@ -3,168 +3,59 @@ from flask import Blueprint, jsonify, request
 from ..models import SurveyResponse, SurveyMetadata
 from ..data_fetcher import DataFetcher, ComplianceMetrics
 from ..data_cleaner import DataCleaner
-from threading import Lock
-from datetime import datetime, timedelta
+from ..scheduler import get_last_fetch_time, is_fetch_in_progress, get_next_run_time
 
 api_bp = Blueprint("api", __name__)
-
-# Global lock to prevent concurrent fetches
-fetch_lock = Lock()
-last_fetch_time = None
-FETCH_COOLDOWN = timedelta(minutes=5)  # Minimum time between fetches
-
-
-def can_fetch():
-    """Check if enough time has passed since last fetch"""
-    global last_fetch_time
-    if last_fetch_time is None:
-        return True
-    return datetime.now() - last_fetch_time > FETCH_COOLDOWN
 
 
 @api_bp.post("/fetch/survey1")
 def fetch_survey1():
-    """API endpoint to fetch survey 1 data"""
-    global last_fetch_time
-    
-
-    if not fetch_lock.acquire(blocking=False):# Try to acquire lock without blocking
-        return jsonify({
-            "success": False,
-            "message": "A fetch operation is already in progress. Please wait.",
-            "in_progress": True
-        }), 429  # 429 Too Many Requests
-    
-    try:
-        if not can_fetch():# Check cooldown period
-            time_left = FETCH_COOLDOWN - (datetime.now() - last_fetch_time)
-            minutes_left = int(time_left.total_seconds() / 60)
-            return jsonify({
-                "success": False,
-                "message": f"Please wait {minutes_left} minutes before fetching again",
-                "cooldown": True
-            }), 429
-        
-        count = DataFetcher.fetch_and_store_survey("survey1")
-        last_fetch_time = datetime.now()
-        
-        return jsonify({
-            "success": True,
-            "message": f"Successfully fetched {count} new responses from Survey 1",
-            "count": count,
-        })
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "message": f"Error fetching Survey 1: {str(e)}",
-        }), 500
-    finally:
-        fetch_lock.release()
+    """
+    Manual API endpoint to fetch survey 1 data.
+    NOTE: This is now disabled for public use - scheduler handles automatic updates.
+    """
+    return jsonify({
+        "success": False,
+        "message": "Manual fetching is disabled. Data is automatically updated every hour by the server.",
+    }), 403
 
 
 @api_bp.post("/fetch/survey2")
 def fetch_survey2():
-    """API endpoint to fetch survey 2 data"""
-    global last_fetch_time
-    
-    if not fetch_lock.acquire(blocking=False):
-        return jsonify({
-            "success": False,
-            "message": "A fetch operation is already in progress. Please wait.",
-            "in_progress": True
-        }), 429
-    
-    try:
-        if not can_fetch():
-            time_left = FETCH_COOLDOWN - (datetime.now() - last_fetch_time)
-            minutes_left = int(time_left.total_seconds() / 60)
-            return jsonify({
-                "success": False,
-                "message": f"Please wait {minutes_left} minutes before fetching again",
-                "cooldown": True
-            }), 429
-        
-        count = DataFetcher.fetch_and_store_survey("survey2")
-        last_fetch_time = datetime.now()
-        
-        return jsonify({
-            "success": True,
-            "message": f"Successfully fetched {count} new responses from Survey 2",
-            "count": count,
-        })
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "message": f"Error fetching Survey 2: {str(e)}",
-        }), 500
-    finally:
-        fetch_lock.release()
+    """
+    Manual API endpoint to fetch survey 2 data.
+    NOTE: This is now disabled for public use - scheduler handles automatic updates.
+    """
+    return jsonify({
+        "success": False,
+        "message": "Manual fetching is disabled. Data is automatically updated every hour by the server.",
+    }), 403
 
 
 @api_bp.post("/fetch/all")
 def fetch_all_surveys():
-    """API endpoint to fetch both surveys with locking"""
-    global last_fetch_time
-    
-    # Try to acquire lock without blocking
-    if not fetch_lock.acquire(blocking=False):
-        return jsonify({
-            "success": False,
-            "message": "A fetch operation is already in progress. Please wait.",
-            "in_progress": True
-        }), 429
-    
-    try:
-        # Check cooldown period
-        if not can_fetch():
-            time_left = FETCH_COOLDOWN - (datetime.now() - last_fetch_time)
-            minutes_left = int(time_left.total_seconds() / 60)
-            return jsonify({
-                "success": False,
-                "message": f"Data was recently updated. Next fetch available in {minutes_left} minutes.",
-                "cooldown": True,
-                "next_available": (last_fetch_time + FETCH_COOLDOWN).isoformat()
-            }), 429
-        
-        count1 = DataFetcher.fetch_and_store_survey("survey1")
-        count2 = DataFetcher.fetch_and_store_survey("survey2")
-        last_fetch_time = datetime.now()
-
-        return jsonify({
-            "success": True,
-            "message": f"Successfully fetched {count1} from Survey 1 and {count2} from Survey 2",
-            "survey1_count": count1,
-            "survey2_count": count2,
-            "total_count": count1 + count2,
-            "fetched_at": last_fetch_time.isoformat()
-        })
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "message": f"Error fetching surveys: {str(e)}"
-        }), 500
-    finally:
-        fetch_lock.release()
+    """
+    Manual API endpoint to fetch both surveys.
+    NOTE: This is now disabled for public use - scheduler handles automatic updates.
+    """
+    return jsonify({
+        "success": False,
+        "message": "Manual fetching is disabled. Data is automatically updated every hour by the server.",
+    }), 403
 
 
 @api_bp.get("/fetch/status")
 def get_fetch_status():
-    """Get the status of fetch operations"""
-    global last_fetch_time
-    
-    is_locked = fetch_lock.locked()
-    can_fetch_now = can_fetch()
+    """Get the status of the scheduled fetch operations"""
+    last_fetch = get_last_fetch_time()
+    next_run = get_next_run_time()
+    is_fetching = is_fetch_in_progress()
     
     status = {
-        "is_fetching": is_locked,
-        "last_fetch": last_fetch_time.isoformat() if last_fetch_time else None,
-        "can_fetch": can_fetch_now
+        "is_fetching": is_fetching,
+        "last_fetch": last_fetch.isoformat() if last_fetch else None,
+        "next_scheduled_run": next_run.isoformat() if next_run else None,
     }
-    
-    if last_fetch_time and not can_fetch_now:
-        time_left = FETCH_COOLDOWN - (datetime.now() - last_fetch_time)
-        status["cooldown_remaining_seconds"] = int(time_left.total_seconds())
-        status["next_available"] = (last_fetch_time + FETCH_COOLDOWN).isoformat()
     
     return jsonify(status)
 

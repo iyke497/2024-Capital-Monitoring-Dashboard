@@ -4,6 +4,7 @@ from .config import Config
 from .database import db
 from .routes.main import main_bp
 from .routes.api import api_bp
+from .scheduler import init_scheduler
 
 
 def create_app(config_class=Config):
@@ -21,5 +22,7 @@ def create_app(config_class=Config):
     # register blueprints
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
+
+    init_scheduler(app)
 
     return app
