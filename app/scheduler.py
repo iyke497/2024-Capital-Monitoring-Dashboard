@@ -114,10 +114,15 @@ def init_scheduler(app):
     print(f"⏰ Next scheduled run: {next_run}", file=sys.stderr)
     print("=" * 60 + "\n", file=sys.stderr)
     
-    # Optional: Run first fetch immediately on startup
-    # Uncomment to fetch data when server starts
-    # print("🔄 Running initial fetch on startup...", file=sys.stderr)
-    # scheduler.add_job(func=scheduled_fetch, id='initial_fetch')
+    # Run first fetch immediately on startup (runs once in background)
+    print("🔄 Scheduling initial fetch to run in 10 seconds...", file=sys.stderr)
+    from datetime import datetime, timedelta
+    scheduler.add_job(
+        func=scheduled_fetch, 
+        trigger='date',
+        run_date=datetime.now() + timedelta(seconds=10),
+        id='initial_fetch'
+    )
     
     # Shutdown scheduler when Flask app stops
     import atexit
