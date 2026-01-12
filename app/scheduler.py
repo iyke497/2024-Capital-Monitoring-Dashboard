@@ -2,12 +2,14 @@
 """
 Background scheduler to automatically fetch survey data on a schedule.
 This runs on the server side, not triggered by clients.
+Works with both Flask dev server and Gunicorn.
 """
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import sys
+import os
 from threading import Lock
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,7 @@ def scheduled_fetch():
     """
     This function runs on a schedule (server-side).
     Imports are inside the function to avoid circular imports.
+    MUST run within Flask application context to access database.
     """
     global last_fetch_time
     
@@ -30,23 +33,29 @@ def scheduled_fetch():
         return
     
     try:
+        # Import app to create context
+        from app import create_app
         from app.data_fetcher import DataFetcher
         
-        print("\n" + "=" * 60, file=sys.stderr)
-        print(f"🔄 Starting scheduled survey fetch at {datetime.now()}", file=sys.stderr)
-        print("=" * 60, file=sys.stderr)
+        # Create application context for database access
+        app = create_app()
         
-        count1 = DataFetcher.fetch_and_store_survey("survey1")
-        count2 = DataFetcher.fetch_and_store_survey("survey2")
-        
-        last_fetch_time = datetime.now()
-        
-        print("=" * 60, file=sys.stderr)
-        print(f"✅ Scheduled fetch completed successfully!", file=sys.stderr)
-        print(f"   Survey 1: {count1} responses", file=sys.stderr)
-        print(f"   Survey 2: {count2} responses", file=sys.stderr)
-        print(f"   Completed at: {last_fetch_time}", file=sys.stderr)
-        print("=" * 60 + "\n", file=sys.stderr)
+        with app.app_context():
+            print("\n" + "=" * 60, file=sys.stderr)
+            print(f"🔄 Starting scheduled survey fetch at {datetime.now()}", file=sys.stderr)
+            print("=" * 60, file=sys.stderr)
+            
+            count1 = DataFetcher.fetch_and_store_survey("survey1")
+            count2 = DataFetcher.fetch_and_store_survey("survey2")
+            
+            last_fetch_time = datetime.now()
+            
+            print("=" * 60, file=sys.stderr)
+            print(f"✅ Scheduled fetch completed successfully!", file=sys.stderr)
+            print(f"   Survey 1: {count1} responses", file=sys.stderr)
+            print(f"   Survey 2: {count2} responses", file=sys.stderr)
+            print(f"   Completed at: {last_fetch_time}", file=sys.stderr)
+            print("=" * 60 + "\n", file=sys.stderr)
         
     except Exception as e:
         print("=" * 60, file=sys.stderr)
@@ -60,20 +69,85 @@ def scheduled_fetch():
 def init_scheduler(app):
     """
     Initialize the background scheduler.
-    Call this from your Flask app factory.
+    Works with both Flask dev server and Gunicorn.
     
     Args:
         app: Flask application instance
     """
     global scheduler
     
-    # Prevent double initialization in Flask debug mode
-    # The reloader spawns a child process, we only want scheduler in the child
-    import os
+    # ========================================
+    # MULTI-WORKER PROTECTION
+    # ========================================
+    # Only ONE process should run the scheduler, even with multiple Gunicorn workers
     
-    if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
-        print("⏸️  Skipping scheduler init in parent process (debug mode reloader)", file=sys.stderr)
+    # 1. Skip if explicitly disabled
+    if os.environ.get('DISABLE_SCHEDULER') == 'true':
+        print("⏸️  Scheduler disabled via DISABLE_SCHEDULER env var", file=sys.stderr)
         return None
+    
+    # 2. Flask development server with reloader check
+    werkzeug_run_main = os.environ.get('WERKZEUG_RUN_MAIN')
+    if werkzeug_run_main is not None and werkzeug_run_main != 'true':
+        print("⏸️  Skipping scheduler init in parent process (Flask dev reloader)", file=sys.stderr)
+        return None
+    
+    # 3. For Gunicorn/production: Use file-based lock
+    # This ensures only the FIRST worker to start gets the scheduler
+    lockfile = '/tmp/survey_scheduler.lock'
+    
+    try:
+        # Check if lock already exists
+        if os.path.exists(lockfile):
+            # Read PID from lockfile
+            try:
+                with open(lockfile, 'r') as f:
+                    lock_pid = int(f.read().strip())
+                
+                # Check if that process is still running
+                try:
+                    os.kill(lock_pid, 0)  # Signal 0 just checks if process exists
+                    # Process exists - another worker has the scheduler
+                    print(f"⏸️  Scheduler already running in process {lock_pid}", file=sys.stderr)
+                    return None
+                except OSError:
+                    # Process doesn't exist - stale lockfile, remove it
+                    print(f"🧹 Removing stale lockfile (PID {lock_pid} not found)", file=sys.stderr)
+                    os.remove(lockfile)
+            except (ValueError, IOError):
+                # Corrupt lockfile - remove it
+                print("🧹 Removing corrupt lockfile", file=sys.stderr)
+                os.remove(lockfile)
+        
+        # Create lockfile with our PID
+        with open(lockfile, 'w') as f:
+            f.write(str(os.getpid()))
+        
+        print(f"🔒 Acquired scheduler lock (PID: {os.getpid()})", file=sys.stderr)
+        
+        # Clean up lockfile on exit
+        import atexit
+        def cleanup_lockfile():
+            try:
+                if os.path.exists(lockfile):
+                    with open(lockfile, 'r') as f:
+                        lock_pid = int(f.read().strip())
+                    # Only remove if it's our PID
+                    if lock_pid == os.getpid():
+                        os.remove(lockfile)
+                        print("🧹 Cleaned up scheduler lockfile", file=sys.stderr)
+            except Exception as e:
+                print(f"Warning: Could not clean up lockfile: {e}", file=sys.stderr)
+        
+        atexit.register(cleanup_lockfile)
+        
+    except Exception as e:
+        print(f"⚠️  Could not acquire scheduler lock: {e}", file=sys.stderr)
+        return None
+    
+    # ========================================
+    # SCHEDULER INITIALIZATION
+    # ========================================
     
     if scheduler is not None:
         print("⚠️  WARNING: Scheduler already initialized", file=sys.stderr)
@@ -114,9 +188,8 @@ def init_scheduler(app):
     print(f"⏰ Next scheduled run: {next_run}", file=sys.stderr)
     print("=" * 60 + "\n", file=sys.stderr)
     
-    # Run first fetch immediately on startup (runs once in background)
+    # Run first fetch immediately on startup (in 10 seconds)
     print("🔄 Scheduling initial fetch to run in 10 seconds...", file=sys.stderr)
-    from datetime import datetime, timedelta
     scheduler.add_job(
         func=scheduled_fetch, 
         trigger='date',

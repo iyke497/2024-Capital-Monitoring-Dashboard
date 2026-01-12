@@ -28,5 +28,5 @@ class Config:
     SURVEY2_ORGANIZATION_ID = os.getenv('SURVEY2_ORGANIZATION_ID')
     
     # Request configuration
-    REQUEST_TIMEOUT = 30
+    REQUEST_TIMEOUT = 120
     PAGE_SIZE = 100  # Number of records per API call
