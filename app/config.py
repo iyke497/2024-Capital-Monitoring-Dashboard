@@ -5,9 +5,17 @@ from pathlib import Path
 # Get the base directory
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv()
+for _env_file in (BASE_DIR / '.env', BASE_DIR / '.flaskenv'):
+    if _env_file.exists():
+        load_dotenv(dotenv_path=_env_file, override=False)
 
 class Config:
+    # Critical for scheduler behavior
+    SECRET_KEY = os.getenv('SECRET_KEY')
+    
+    # IMPORTANT: Control debug mode via environment variable
+    DEBUG = os.getenv('FLASK_DEBUG', '0').lower() in ['1', 'true', 'yes']
+
     # Database - Use absolute path
     SQLALCHEMY_DATABASE_URI = os.getenv(
         'DATABASE_URL', 
@@ -30,3 +38,11 @@ class Config:
     # Request configuration
     REQUEST_TIMEOUT = 120
     PAGE_SIZE = 100  # Number of records per API call
+
+    # ====== Scheduler Settings ======
+    SCHEDULER_ENABLED = os.getenv('SCHEDULER_ENABLED', 'true').lower() in ['1', 'true', 'yes']
+    SCHEDULER_INTERVAL_HOURS = int(os.getenv('SCHEDULER_INTERVAL_HOURS', '1'))
+    
+    # ====== Development/Production Flags ======
+    # These help with environment detection
+    ENV = os.getenv('FLASK_ENV', 'production')

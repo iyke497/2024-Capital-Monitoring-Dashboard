@@ -5,6 +5,8 @@ from .database import db
 from .routes.main import main_bp
 from .routes.api import api_bp
 from .scheduler import init_scheduler
+import sys
+import os
 
 
 def create_app(config_class=Config):
@@ -23,6 +25,15 @@ def create_app(config_class=Config):
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
 
-    init_scheduler(app)
+    if app.config.get('SCHEDULER_ENABLED', True):
+        # Check if we're in Flask reloader parent process
+        is_reloader_parent = app.debug and os.environ.get('WERKZEUG_RUN_MAIN') != 'true'
+        
+        if not is_reloader_parent:
+            init_scheduler(app)
+        else:
+            print("⏸️  Skipping scheduler in Flask reloader parent process", file=sys.stderr)
+    else:
+        print("⏸️  Scheduler disabled by config", file=sys.stderr)
 
     return app

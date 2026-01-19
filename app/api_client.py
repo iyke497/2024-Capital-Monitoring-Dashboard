@@ -14,6 +14,7 @@ class APIClient:
             survey_type: 'survey1' or 'survey2'
         """
         self.survey_type = survey_type
+        self.page_size = Config.PAGE_SIZE
         self._setup_config()
         
     def _setup_config(self):

@@ -330,6 +330,167 @@ class DataFetcher:
         
         db.session.commit()
 
+    @classmethod
+    def get_existing_count(cls, survey_type: str) -> int:
+        """Get count of responses we already have for this survey"""
+        from app.models import SurveyResponse
+        return SurveyResponse.query.filter_by(survey_type=survey_type).count()
+    
+    @classmethod
+    def get_total_api_responses(cls, api_client, survey_type: str) -> Optional[int]:
+        """
+        Get total response count from API.
+        Makes one API call to get metadata.
+        """
+        try:
+            # Fetch just one record to get survey metadata
+            test_response = api_client.fetch_responses(offset=0, limit=1)
+            
+            if test_response.get('status'):
+                # Check if API returns total count
+                data = test_response.get('data', {})
+                
+                # Try different possible locations for total count
+                if 'count' in data:
+                    return data['count']
+                elif 'total' in data:
+                    return data['total']
+                elif 'no_of_responses' in data:
+                    return data['no_of_responses']
+                
+                # Some APIs return it at the top level
+                if 'count' in test_response:
+                    return test_response['count']
+                    
+        except Exception as e:
+            print(f"Error getting total count from API: {e}")
+        
+        return None
+    
+    @classmethod
+    def smart_fetch_responses(cls, api_client, survey_type: str) -> list:
+        """
+        Smart fetch: Only gets pages we haven't fetched yet.
+        """
+        # Get how many responses we already have
+        existing_count = cls.get_existing_count(survey_type)
+        
+        # Get total responses from API
+        total_api = cls.get_total_api_responses(api_client, survey_type)
+        
+        if total_api is None:
+            # API doesn't provide total count, fall back to full fetch
+            print(f"API doesn't provide total count, fetching all responses...")
+            return api_client.fetch_all_responses()
+        
+        print(f"Smart fetch for {survey_type}:")
+        print(f"  - API has {total_api} total responses")
+        print(f"  - We have {existing_count} in database")
+        
+        if existing_count >= total_api:
+            print(f"  ✅ Already have all {total_api} responses")
+            return []  # Nothing new to fetch
+        
+        # Calculate what we need to fetch
+        new_to_fetch = total_api - existing_count
+        print(f"  - Need to fetch {new_to_fetch} new responses")
+        
+        # Start fetching from where we left off
+        start_offset = existing_count
+        all_responses = []
+        
+        # Use the existing fetch_all_responses method but with custom start
+        offset = start_offset
+        limit = api_client.page_size
+        
+        while True:
+            print(f"  Fetching offset={offset}, limit={limit}")
+            response_data = api_client.fetch_responses(offset, limit)
+            
+            if not response_data.get('status'):
+                print(f"API returned error: {response_data.get('message', 'Unknown error')}")
+                break
+            
+            data = response_data.get('data', {})
+            results = data.get('results', [])
+            
+            if not results:
+                break
+            
+            all_responses.extend(results)
+            
+            # Check if we've fetched enough
+            if len(all_responses) >= new_to_fetch:
+                # Trim excess (in case last page had more than we needed)
+                all_responses = all_responses[:new_to_fetch]
+                break
+            
+            # Check if there are more pages
+            next_url = data.get('next')
+            if not next_url:
+                break
+            
+            offset += limit
+        
+        print(f"  ✅ Fetched {len(all_responses)} new responses")
+        return all_responses
+    
+    @classmethod 
+    def fetch_and_store_survey_smart(cls, survey_type: str = "survey1"):
+        """Smart version using optimized pagination"""
+        print(f"🚀 Starting SMART data fetch for {survey_type}...")
+        
+        api_client = APIClient(survey_type)
+        
+        # Use smart pagination
+        responses = cls.smart_fetch_responses(api_client, survey_type)
+        
+        if not responses:
+            print(f"📭 No new responses needed for {survey_type}")
+            return 0
+        
+        # Process responses (existing logic)
+        processed_count = 0
+        skipped_count = 0
+        
+        for response in responses:
+            try:
+                public_id = (response or {}).get("public_id")
+                
+                # Still check for duplicates (in case of race conditions)
+                existing = SurveyResponse.query.filter_by(public_id=public_id).first()
+                if existing:
+                    print(f"⚠️  Response {public_id} already exists (race condition?), skipping...")
+                    skipped_count += 1
+                    continue
+
+                processed_data = cls.process_survey_response(response, survey_type)
+                survey_response = SurveyResponse(**processed_data)
+                db.session.add(survey_response)
+                db.session.commit()
+
+                processed_count += 1
+                
+                if processed_count % 100 == 0:
+                    print(f"📦 Processed {processed_count} records for {survey_type}...")
+
+            except Exception as e:
+                print(f"❌ Error processing response {public_id}: {e}")
+                db.session.rollback()
+                continue
+        
+        print(f"✅ Completed SMART processing for {survey_type}:")
+        print(f"   - {processed_count} new responses added")
+        print(f"   - {skipped_count} duplicates skipped (race conditions)")
+        
+        # Update metadata
+        if responses and len(responses) > 0:
+            first_survey = (responses[0] or {}).get("survey") or {}
+            if first_survey:
+                cls._update_survey_metadata(survey_type, first_survey)
+        
+        return processed_count
+
 
 class ComplianceMetrics:
 
