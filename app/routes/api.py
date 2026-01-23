@@ -215,3 +215,20 @@ def budget_reporting_overview():
             "success": False,
             "message": str(e)
         }), 500
+
+# Weekly Activity
+@api_bp.get("/analytics/weekly-activity")
+def weekly_activity():
+    """Get daily response counts for the past 7 days"""
+    try:
+        svc = AnalyticsService()
+        data = svc.activity.weekly_activity_summary()
+        return jsonify({
+            "success": True,
+            "data": data
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500

@@ -90,12 +90,98 @@ $(document).ready(function() {
     function updateStats() {
         $.get('/api/stats', function(data) {
             $('#total-responses').text(data.total_responses);
-            $('#survey1-count').text(data.survey1_count);
-            $('#survey2-count').text(data.survey2_count);
         });
     }
 
-    // 6. Load and render budget reporting pie chart
+    // 6. Load and render weekly activity chart
+    function loadActivityChart() {
+        $.get('/api/analytics/weekly-activity', function(response) {
+            if (response.success) {
+                const data = response.data;
+                const ctx = document.getElementById('activityChart');
+                
+                if (ctx) {
+                    // Format dates for labels (e.g., "Mon", "Tue")
+                    const labels = data.map(d => {
+                        const date = new Date(d.date);
+                        return date.toLocaleDateString('en-US', { weekday: 'short' });
+                    });
+                    
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Daily Responses',
+                                data: data.map(d => d.total),
+                                borderColor: '#4baa73',
+                                backgroundColor: 'rgba(75, 170, 115, 0.1)',
+                                tension: 0.3,
+                                fill: true,
+                                pointBackgroundColor: '#4baa73',
+                                pointBorderColor: '#fff',
+                                pointBorderWidth: 2,
+                                pointRadius: 4,
+                                pointHoverRadius: 6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        title: function(context) {
+                                            const index = context[0].dataIndex;
+                                            const date = new Date(data[index].date);
+                                            return date.toLocaleDateString('en-US', { 
+                                                month: 'short', 
+                                                day: 'numeric' 
+                                            });
+                                        },
+                                        label: function(context) {
+                                            return `Responses: ${context.parsed.y}`;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        stepSize: 1,
+                                        font: {
+                                            size: 11
+                                        }
+                                    },
+                                    grid: {
+                                        color: 'rgba(0, 0, 0, 0.05)'
+                                    }
+                                },
+                                x: {
+                                    ticks: {
+                                        font: {
+                                            size: 11
+                                        }
+                                    },
+                                    grid: {
+                                        display: false
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        }).fail(function(error) {
+            console.error('Failed to load weekly activity data:', error);
+        });
+    }
+
+    // 7. Load and render budget reporting pie chart
     function loadBudgetChart() {
         $.get('/api/analytics/budget-reporting', function(response) {
             if (response.success) {
@@ -148,7 +234,7 @@ $(document).ready(function() {
         });
     }
 
-    // 7. Check server status and update UI
+    // 8. Check server status and update UI
     function checkStatus() {
         $.get('/api/fetch/status', function(data) {
             if (data.last_fetch) {
@@ -167,6 +253,7 @@ $(document).ready(function() {
                 console.log('Fetch completed, reloading data...');
                 table.ajax.reload();
                 updateStats();
+                loadActivityChart();
                 loadBudgetChart();
             }
             
@@ -178,11 +265,12 @@ $(document).ready(function() {
         });
     }
 
-    // 8. Initial load
+    // 9. Initial load
     updateStats();
+    loadActivityChart();
     loadBudgetChart();
     checkStatus();
 
-    // 9. Poll server status every 10 seconds
+    // 10. Poll server status every 10 seconds
     setInterval(checkStatus, 10000);
 });

@@ -160,6 +160,14 @@ header h1 {
     border-top: 1px solid var(--border-color);
 }
 
+.activity-chart-container {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+    height: 150px;
+    position: relative;
+}
+
 .breakdown-item {
     display: flex;
     justify-content: space-between;
