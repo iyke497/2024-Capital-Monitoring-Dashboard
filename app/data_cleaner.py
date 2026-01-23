@@ -118,49 +118,6 @@ class DataCleaner:
         # No match found
         return normalized_mda, None
     
-    # TODO: Delete this function
-    @staticmethod
-    def extract_ergp_code_and_project_name_old(project_name: str) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Extract ERGP code from project name and return both normalized project name and ERGP code.
-        
-        ERGP codes typically follow patterns like:
-            - ERGP12345678
-            - ERGP-12345678
-            - ERGP 12345678
-        
-        Args:
-            project_name: Raw project name that may contain ERGP code
-            
-        Returns:
-            Tuple of (cleaned_project_name, ergp_code)
-        """
-        if not project_name or not isinstance(project_name, str):
-            return None, None
-        
-            # Pattern to match ERGP code: ERGP followed by optional separator and 8 digits
-        ergp_pattern = r'\b(ERGP[-\s]?\d{8})\b'
-        
-            # Search for ERGP code
-        match = re.search(ergp_pattern, project_name, re.IGNORECASE)
-        
-        if match:
-            ergp_code = match.group(1)
-                # Normalize ERGP code: remove spaces/hyphens, uppercase
-            ergp_code_normalized = re.sub(r'[-\s]', '', ergp_code).upper()
-            
-                # Remove ERGP code from project name
-            cleaned_name = re.sub(ergp_pattern, '', project_name, flags=re.IGNORECASE)
-            
-                # Normalize the project name
-            cleaned_name = DataCleaner.normalize_text(cleaned_name)
-            
-            return cleaned_name, ergp_code_normalized
-        else:
-                # No ERGP code found, just normalize the project name
-            cleaned_name = DataCleaner.normalize_text(project_name)
-            return cleaned_name, None
-    
     @staticmethod
     def extract_ergp_code_and_project_name(project_name: str) -> Tuple[Optional[str], Optional[str]]:
         """
