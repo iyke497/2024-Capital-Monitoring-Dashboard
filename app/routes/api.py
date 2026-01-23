@@ -3,11 +3,13 @@ from flask import Blueprint, jsonify, request
 from ..models import SurveyResponse, SurveyMetadata
 from ..data_fetcher import DataFetcher, ComplianceMetrics
 from ..data_cleaner import DataCleaner
+from ..analytics import AnalyticsService
 from ..scheduler import get_last_fetch_time, is_fetch_in_progress, get_next_run_time
 
 api_bp = Blueprint("api", __name__)
 
 
+# Data Fetching Endpoints
 @api_bp.post("/fetch/survey1")
 def fetch_survey1():
     """
@@ -132,7 +134,7 @@ def get_responses():
     })
 
 
-# Compliance and Metrics
+# Compliance and Metrics Endpoints
 @api_bp.get("/compliance/mda")
 def get_mda_compliance():
     """Returns MDA-level compliance data for visualization."""
@@ -191,3 +193,25 @@ def get_ministry_compliance():
         return jsonify({"success": True, "data": output})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+@api_bp.get("/analytics/dashboard")
+def analytics_dashboard():
+    svc = AnalyticsService()
+    return jsonify(svc.dashboard_overview())
+
+
+@api_bp.get("/analytics/budget-reporting")
+def budget_reporting_overview():
+    """Get overview of reported vs unreported 2024 budget projects"""
+    try:
+        svc = AnalyticsService()
+        data = svc.performance.budget_reporting_overview()
+        return jsonify({
+            "success": True,
+            "data": data
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500

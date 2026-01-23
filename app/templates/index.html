@@ -19,162 +19,46 @@
     </div>
 </div>
 
-<div class="stats-cards">
-    <div class="card"><h3>Total</h3><div id="total-responses" class="stat-val">0</div></div>
-    <div class="card"><h3>Survey 1</h3><div id="survey1-count" class="stat-val">0</div></div>
-    <div class="card"><h3>Survey 2</h3><div id="survey2-count" class="stat-val">0</div></div>
+<div class="overview-grid">
+    <div class="card stats-card">
+        <h3>Total Responses</h3>
+        <div id="total-responses" class="stat-val">0</div>
+        <div class="stat-breakdown">
+            <div class="breakdown-item">
+                <span class="breakdown-label">Survey 1:</span>
+                <span id="survey1-count" class="breakdown-val">0</span>
+            </div>
+            <div class="breakdown-item">
+                <span class="breakdown-label">Survey 2:</span>
+                <span id="survey2-count" class="breakdown-val">0</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card chart-card">
+        <h3>2024 Budget Project Reporting</h3>
+        <div class="chart-container">
+            <canvas id="budgetChart"></canvas>
+        </div>
+    </div>
 </div>
 
-<table id="responses-table" class="display" style="width:100%">
-    <thead>
-        <tr>
-            <th>Project Name</th>
-            <th>ERGP Code</th>
-            <th>MDA</th>
-            <th>% Done</th>
-            <th>Appropriation</th>
-        </tr>
-    </thead>
-</table>
+<div class="card table-card">
+    <h3>Recent Project Responses</h3>
+    <table id="responses-table" class="display" style="width:100%">
+        <thead>
+            <tr>
+                <th>Project Name</th>
+                <th>ERGP Code</th>
+                <th>MDA</th>
+                <th>% Done</th>
+                <th>Appropriation</th>
+            </tr>
+        </thead>
+    </table>
+</div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-$(document).ready(function() {
-    let countdownInterval;
-    let wasFetching = false;
-    
-    // 1. Initialize DataTable
-    const table = $('#responses-table').DataTable({
-        serverSide: true,
-        ajax: '/api/responses',
-        columns: [
-            { data: 'project_name', defaultContent: 'N/A' },
-            { data: 'ergp_code', defaultContent: 'N/A' },
-            { data: 'mda_name', defaultContent: 'N/A' },
-            { data: 'percentage_completed', defaultContent: '0%' },
-            { 
-                data: 'project_appropriation_2024',
-                render: $.fn.dataTable.render.number(',', '.', 2, '₦')
-            }
-        ]
-    });
-
-    // 2. Format timestamp for display
-    function formatTimestamp(isoString) {
-        const date = new Date(isoString);
-        const timeString = date.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: true 
-        });
-        const dateString = date.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric'
-        });
-        return `${dateString} at ${timeString}`;
-    }
-
-    // 3. Update countdown display
-    function updateCountdown(nextRunTime) {
-        clearInterval(countdownInterval);
-        
-        if (!nextRunTime) {
-            $('#next-update').text('Next update: Scheduled');
-            return;
-        }
-        
-        const nextRun = new Date(nextRunTime);
-        
-        countdownInterval = setInterval(function() {
-            const now = new Date();
-            const remaining = nextRun - now;
-            
-            if (remaining <= 0) {
-                $('#next-update').text('Next update: Updating now...');
-                // Check status more frequently when update is due
-                setTimeout(checkStatus, 2000);
-                return;
-            }
-            
-            const totalMinutes = Math.floor(remaining / 60000);
-            const hours = Math.floor(totalMinutes / 60);
-            const minutes = totalMinutes % 60;
-            const seconds = Math.floor((remaining % 60000) / 1000);
-            
-            if (hours > 0) {
-                $('#next-update').text(`Next update in: ${hours}h ${minutes}m`);
-            } else if (minutes > 0) {
-                $('#next-update').text(`Next update in: ${minutes}m ${seconds}s`);
-            } else {
-                $('#next-update').text(`Next update in: ${seconds}s`);
-            }
-        }, 1000);
-    }
-
-    // 4. Show/hide update status
-    function showUpdateStatus(isUpdating) {
-        const statusDiv = $('#update-status');
-        const icon = $('#status-icon');
-        const text = $('#status-text');
-        
-        if (isUpdating) {
-            icon.text('⏳');
-            text.text('Server is fetching latest data...');
-            statusDiv.css('background', '#fff3cd').show();
-        } else {
-            statusDiv.fadeOut();
-        }
-    }
-
-    // 5. Refresh stats
-    function updateStats() {
-        $.get('/api/stats', function(data) {
-            $('#total-responses').text(data.total_responses);
-            $('#survey1-count').text(data.survey1_count);
-            $('#survey2-count').text(data.survey2_count);
-        });
-    }
-
-    // 6. Check server status and update UI
-    function checkStatus() {
-        $.get('/api/fetch/status', function(data) {
-            // Update last fetch time
-            if (data.last_fetch) {
-                $('#last-updated').text('Last updated: ' + formatTimestamp(data.last_fetch));
-            } else {
-                $('#last-updated').text('Last updated: Never');
-            }
-            
-            // Update next scheduled run
-            if (data.next_scheduled_run) {
-                updateCountdown(data.next_scheduled_run);
-            }
-            
-            // Show/hide fetching indicator
-            showUpdateStatus(data.is_fetching);
-            
-            // If fetch just completed, reload data
-            if (wasFetching && !data.is_fetching) {
-                console.log('Fetch completed, reloading data...');
-                table.ajax.reload();
-                updateStats();
-            }
-            
-            wasFetching = data.is_fetching;
-            
-        }).fail(function() {
-            $('#last-updated').text('Last updated: Unable to check');
-            $('#next-update').text('Next update: Unable to check');
-        });
-    }
-
-    // 7. Initial load
-    updateStats();
-    checkStatus();
-
-    // 8. Poll server status every 10 seconds to stay in sync
-    setInterval(checkStatus, 10000);
-});
-</script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}
