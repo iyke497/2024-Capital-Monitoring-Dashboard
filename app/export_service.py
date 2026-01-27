@@ -8,6 +8,7 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from flask import current_app
+import json
 
 
 class ExportService:
@@ -50,26 +51,45 @@ class ExportService:
         ("WHAT ARE THE CHALLENGES AND RECOMMENDATIONS", "challenges_recommendations"),
     ]
     
-    @staticmethod
-    def format_cell_value(value, field_name):
+    # Fields that contain file URLs
+    FILE_FIELDS = ['award_certificate', 'project_pictures', 'other_documents', 'job_completion_certificate']
+    
+    @classmethod
+    def format_cell_value(cls, value, field_name):
         """Format cell values based on field type"""
         if value is None:
             return ""
         
-        # Handle JSON fields (file attachments)
-        if field_name in ['award_certificate', 'project_pictures', 'other_documents', 'job_completion_certificate']:
-            if isinstance(value, dict):
-                # Return file count or status
-                if 'filename' in value:
-                    return value.get('filename', 'Attached')
-                return 'Attached'
-            elif isinstance(value, list):
-                return f"{len(value)} file(s)" if value else ""
-            return str(value) if value else ""
-        
         # Handle boolean fields
         if field_name == 'completion_cert_issued':
             return "Yes" if value else "No"
+        
+        # Handle JSON/file fields - stored as arrays of URL strings
+        if field_name in cls.FILE_FIELDS:
+            # If it's already a list (JSON deserialized)
+            if isinstance(value, list):
+                # Filter out empty/None values and join with newlines
+                urls = [str(url).strip() for url in value if url]
+                result = '\n'.join(urls) if urls else ""
+                current_app.logger.info(f"FILE FIELD {field_name}: Got list with {len(urls)} URLs")
+                return result
+            
+            # If it's a string, try to parse it as JSON
+            elif isinstance(value, str):
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        urls = [str(url).strip() for url in parsed if url]
+                        current_app.logger.info(f"FILE FIELD {field_name}: Parsed string to list with {len(urls)} URLs")
+                        return '\n'.join(urls) if urls else ""
+                except (json.JSONDecodeError, TypeError):
+                    # Not valid JSON, return as-is (might be a single URL)
+                    current_app.logger.info(f"FILE FIELD {field_name}: Returning string as-is")
+                    return value.strip()
+            
+            # Fallback for other types
+            current_app.logger.warning(f"FILE FIELD {field_name}: Unexpected type {type(value)}, value: {value}")
+            return str(value) if value else ""
         
         # Handle numeric fields
         if field_name in ['project_appropriation_2024', 'amount_released_2024', 
@@ -87,7 +107,7 @@ class ExportService:
             return str(value)
         
         # Default string conversion
-        return str(value)
+        return str(value) if value else ""
     
     @classmethod
     def export_to_excel(cls, responses, filename=None):
@@ -104,6 +124,8 @@ class ExportService:
         if filename is None:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f'survey_responses_{timestamp}.xlsx'
+        
+        current_app.logger.info(f"Starting export of {len(responses)} responses")
         
         # Create workbook
         wb = openpyxl.Workbook()
@@ -146,9 +168,13 @@ class ExportService:
                                  'amount_utilized_2024', 'total_cost_planned', 
                                  'total_financial_commitment', 'completion_cert_amount']:
                     cell.number_format = '#,##0.00'
+                
+                # Enable text wrapping for file/document fields with multiple URLs
+                if field_name in cls.FILE_FIELDS:
+                    cell.alignment = Alignment(wrap_text=True, vertical='top')
         
         # Auto-adjust column widths
-        for col_idx, (header, _) in enumerate(cls.EXPORT_COLUMNS, start=1):
+        for col_idx, (header, field_name) in enumerate(cls.EXPORT_COLUMNS, start=1):
             column_letter = get_column_letter(col_idx)
             
             # Calculate max width based on header and sample data
@@ -156,14 +182,24 @@ class ExportService:
             for row_idx in range(2, min(ws.max_row + 1, 102)):  # Check first 100 rows
                 cell_value = ws.cell(row=row_idx, column=col_idx).value
                 if cell_value:
-                    max_length = max(max_length, len(str(cell_value)))
+                    # For multiline cells, use the longest line
+                    if isinstance(cell_value, str) and '\n' in cell_value:
+                        lines = cell_value.split('\n')
+                        max_length = max(max_length, max(len(line) for line in lines))
+                    else:
+                        max_length = max(max_length, len(str(cell_value)))
             
-            # Set width (with limits)
-            adjusted_width = min(max_length + 2, 50)
+            # Set width (with limits) - give more space to URL fields
+            if field_name in cls.FILE_FIELDS:
+                adjusted_width = min(max_length + 2, 80)  # Wider for URLs
+            else:
+                adjusted_width = min(max_length + 2, 50)
             ws.column_dimensions[column_letter].width = adjusted_width
         
         # Freeze the header row
         ws.freeze_panes = "A2"
+        
+        current_app.logger.info("Excel file generated successfully")
         
         # Save to BytesIO
         output = BytesIO()

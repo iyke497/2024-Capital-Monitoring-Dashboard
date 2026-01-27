@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <title>{% block title %}Dashboard{% endblock %}</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
+    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
@@ -11,11 +16,13 @@
     <div class="header-bar">
         <div class="container">
             <div class="header-content">
-                <img src="{{ url_for('static', filename='images/eyemark-logo.png') }}" alt="Eyemark" class="logo">
+                <a href="/" class="logo-link">
+                    <img src="{{ url_for('static', filename='images/eyemark-logo.png') }}" alt="Eyemark" class="logo">
+                </a>
                 <nav>
                     <ul>
-                        <li><a href="/">Home</a></li>
                         <li><a href="/compliance">Compliance Metrics</a></li>
+                        <li><a href="/api/export/responses" class="export-btn">Export Data</a></li>
                     </ul>
                 </nav>
             </div>

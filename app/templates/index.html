@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
-{% block title %}Survey Dashboard{% endblock %}
-{% block header %}Data Ingestion Dashboard{% endblock %}
+{% block title %}Eyemark - Compliance Dashboard{% endblock %}
+{% block header %}2024 Capital Project Monitoring{% endblock %}
 
 {% block content %}
 <div class="controls">
@@ -24,7 +24,6 @@
         <h3>Total Responses</h3>
         <div id="total-responses" class="stat-val">0</div>
         <div class="activity-chart-container">
-            <h3>Weekly Activity</h3>
             <canvas id="activityChart"></canvas>
         </div>
     </div>
@@ -38,21 +37,152 @@
 </div>
 
 <div class="card table-card">
-    <h3>Recent Project Responses</h3>
-    <table id="responses-table" class="display" style="width:100%">
-        <thead>
-            <tr>
-                <th>Project Name</th>
-                <th>ERGP Code</th>
-                <th>MDA</th>
-                <th>% Done</th>
-                <th>Appropriation</th>
-            </tr>
-        </thead>
-    </table>
+    <h3>Ministry Performance & Recent Responses</h3>
+    
+    <!-- Pills Navigation -->
+    <div class="pills-nav">
+        <button class="pill-btn active" data-tab="best">Best Performing</button>
+        <button class="pill-btn" data-tab="worst">Worst Performing</button>
+        <button class="pill-btn" data-tab="recent">Recent Responses</button>
+    </div>
+    
+    <!-- Tab Content -->
+    <div class="tab-content">
+        <!-- Best Performing Tab -->
+        <div id="best-tab" class="tab-pane active">
+            <table id="best-ministries-table" class="display" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Ministry</th>
+                        <th>MDAs</th>
+                        <th>Expected</th>
+                        <th>Reported</th>
+                        <th>Compliance %</th>
+                        <th>Performance Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Will be populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Worst Performing Tab -->
+        <div id="worst-tab" class="tab-pane">
+            <table id="worst-ministries-table" class="display" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Ministry</th>
+                        <th>MDAs</th>
+                        <th>Expected</th>
+                        <th>Reported</th>
+                        <th>Compliance %</th>
+                        <th>Performance Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Will be populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Recent Responses Tab -->
+        <div id="recent-tab" class="tab-pane">
+            <table id="responses-table" class="display" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Project Name</th>
+                        <th>ERGP Code</th>
+                        <th>MDA</th>
+                        <th>% Done</th>
+                        <th>Appropriation</th>
+                    </tr>
+                </thead>
+            </table>
+        </div>
+    </div>
 </div>
+
+<!-- Export Modal -->
+<div id="exportModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Export Survey Responses</h3>
+            <span class="close">&times;</span>
+        </div>
+        
+        <div class="modal-body">
+            <p style="margin-bottom: 20px; color: #666;">
+                Export survey responses to Excel with optional filters. Leave filters empty to export all data.
+            </p>
+            
+            <form id="exportForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="filter-ministry">Parent Ministry</label>
+                        <select id="filter-ministry" name="parent_ministry">
+                            <option value="">All Ministries</option>
+                            <!-- Will be populated dynamically -->
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="filter-state">State</label>
+                        <select id="filter-state" name="state">
+                            <option value="">All States</option>
+                            <!-- Will be populated dynamically -->
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="filter-status">Project Status</label>
+                        <select id="filter-status" name="project_status">
+                            <option value="">All Statuses</option>
+                            <option value="Not Started">Not Started</option>
+                            <option value="Ongoing">Ongoing</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Suspended">Suspended</option>
+                            <option value="Cancelled">Cancelled</option>
+                        </select>
+                    </div>
+                    
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="filter-start-date">Start Date</label>
+                        <input type="date" id="filter-start-date" name="start_date">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="filter-end-date">End Date</label>
+                        <input type="date" id="filter-end-date" name="end_date">
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="resetFilters">Reset Filters</button>
+                    <button type="submit" class="btn btn-primary">
+                        <span id="exportBtnText">Export to Excel</span>
+                        <span id="exportBtnSpinner" style="display: none;">Exporting...</span>
+                    </button>
+                </div>
+            </form>
+            
+            <div id="exportPreview" style="margin-top: 20px; display: none;">
+                <p style="font-size: 14px; color: #666;">
+                    <strong>Preview:</strong> <span id="previewCount">0</span> responses will be exported
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script src="{{ url_for('static', filename='js/export.js') }}"></script>
 {% endblock %}

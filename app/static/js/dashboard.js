@@ -3,9 +3,11 @@
 $(document).ready(function() {
     let countdownInterval;
     let wasFetching = false;
+    let bestMinistries = [];
+    let worstMinistries = [];
     
-    // 1. Initialize DataTable
-    const table = $('#responses-table').DataTable({
+    // 1. Initialize DataTables
+    const responsesTable = $('#responses-table').DataTable({
         serverSide: true,
         ajax: '/api/responses',
         columns: [
@@ -19,8 +21,78 @@ $(document).ready(function() {
             }
         ]
     });
-
-    // 2. Format timestamp for display
+    
+    // Initialize static tables for ministry rankings
+    const bestTable = $('#best-ministries-table').DataTable({
+        paging: false,
+        searching: false,
+        info: false,
+        order: [[5, 'desc']], // Sort by performance score
+        columns: [
+            { data: 'ministry_name' },
+            { data: 'total_mdas' },
+            { data: 'expected_projects' },
+            { data: 'reported_projects' },
+            { 
+                data: 'compliance_rate_pct',
+                render: function(data) {
+                    return data.toFixed(1) + '%';
+                }
+            },
+            { 
+                data: 'performance_index',
+                render: function(data) {
+                    let badgeClass = 'performance-medium';
+                    if (data >= 70) badgeClass = 'performance-high';
+                    else if (data < 40) badgeClass = 'performance-low';
+                    return `<span class="performance-badge ${badgeClass}">${data.toFixed(1)}</span>`;
+                }
+            }
+        ]
+    });
+    
+    const worstTable = $('#worst-ministries-table').DataTable({
+        paging: false,
+        searching: false,
+        info: false,
+        order: [[5, 'asc']], // Sort by performance score (lowest first)
+        columns: [
+            { data: 'ministry_name' },
+            { data: 'total_mdas' },
+            { data: 'expected_projects' },
+            { data: 'reported_projects' },
+            { 
+                data: 'compliance_rate_pct',
+                render: function(data) {
+                    return data.toFixed(1) + '%';
+                }
+            },
+            { 
+                data: 'performance_index',
+                render: function(data) {
+                    let badgeClass = 'performance-medium';
+                    if (data >= 70) badgeClass = 'performance-high';
+                    else if (data < 40) badgeClass = 'performance-low';
+                    return `<span class="performance-badge ${badgeClass}">${data.toFixed(1)}</span>`;
+                }
+            }
+        ]
+    });
+    
+    // 2. Tab switching functionality
+    $('.pill-btn').on('click', function() {
+        const tabName = $(this).data('tab');
+        
+        // Update active pill
+        $('.pill-btn').removeClass('active');
+        $(this).addClass('active');
+        
+        // Update active tab content
+        $('.tab-pane').removeClass('active');
+        $(`#${tabName}-tab`).addClass('active');
+    });
+    
+    // 3. Format timestamp for display
     function formatTimestamp(isoString) {
         const date = new Date(isoString);
         const timeString = date.toLocaleTimeString('en-US', { 
@@ -35,7 +107,7 @@ $(document).ready(function() {
         return `${dateString} at ${timeString}`;
     }
 
-    // 3. Update countdown display
+    // 4. Update countdown display
     function updateCountdown(nextRunTime) {
         clearInterval(countdownInterval);
         
@@ -71,7 +143,7 @@ $(document).ready(function() {
         }, 1000);
     }
 
-    // 4. Show/hide update status
+    // 5. Show/hide update status
     function showUpdateStatus(isUpdating) {
         const statusDiv = $('#update-status');
         const icon = $('#status-icon');
@@ -86,14 +158,38 @@ $(document).ready(function() {
         }
     }
 
-    // 5. Refresh stats
+    // 6. Refresh stats
     function updateStats() {
         $.get('/api/stats', function(data) {
             $('#total-responses').text(data.total_responses);
         });
     }
 
-    // 6. Load and render weekly activity chart
+    // 7. Load ministry rankings
+    function loadMinistryRankings() {
+        $.get('/api/analytics/ministry-rankings', function(response) {
+            if (response.success) {
+                bestMinistries = response.data.best;
+                worstMinistries = response.data.worst;
+                
+                // Clear and repopulate tables
+                bestTable.clear();
+                worstTable.clear();
+                
+                if (bestMinistries.length > 0) {
+                    bestTable.rows.add(bestMinistries).draw();
+                }
+                
+                if (worstMinistries.length > 0) {
+                    worstTable.rows.add(worstMinistries).draw();
+                }
+            }
+        }).fail(function(error) {
+            console.error('Failed to load ministry rankings:', error);
+        });
+    }
+    
+    // 8. Load and render weekly activity chart
     function loadActivityChart() {
         $.get('/api/analytics/weekly-activity', function(response) {
             if (response.success) {
@@ -181,7 +277,7 @@ $(document).ready(function() {
         });
     }
 
-    // 7. Load and render budget reporting pie chart
+    // 9. Load and render budget reporting pie chart
     function loadBudgetChart() {
         $.get('/api/analytics/budget-reporting', function(response) {
             if (response.success) {
@@ -234,7 +330,7 @@ $(document).ready(function() {
         });
     }
 
-    // 8. Check server status and update UI
+    // 10. Check server status and update UI
     function checkStatus() {
         $.get('/api/fetch/status', function(data) {
             if (data.last_fetch) {
@@ -251,10 +347,11 @@ $(document).ready(function() {
             
             if (wasFetching && !data.is_fetching) {
                 console.log('Fetch completed, reloading data...');
-                table.ajax.reload();
+                responsesTable.ajax.reload();
                 updateStats();
                 loadActivityChart();
                 loadBudgetChart();
+                loadMinistryRankings();
             }
             
             wasFetching = data.is_fetching;
@@ -265,12 +362,13 @@ $(document).ready(function() {
         });
     }
 
-    // 9. Initial load
+    // 11. Initial load
     updateStats();
     loadActivityChart();
     loadBudgetChart();
+    loadMinistryRankings();
     checkStatus();
 
-    // 10. Poll server status every 10 seconds
+    // 12. Poll server status every 10 seconds
     setInterval(checkStatus, 10000);
 });

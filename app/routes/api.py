@@ -1,10 +1,13 @@
 # app/routes/api.py
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file, current_app
+from app import db
 from ..models import SurveyResponse, SurveyMetadata
 from ..data_fetcher import DataFetcher, ComplianceMetrics
 from ..data_cleaner import DataCleaner
 from ..analytics import AnalyticsService
 from ..scheduler import get_last_fetch_time, is_fetch_in_progress, get_next_run_time
+from app.export_service import ExportService
+from datetime import datetime
 
 api_bp = Blueprint("api", __name__)
 
@@ -62,29 +65,30 @@ def get_fetch_status():
     return jsonify(status)
 
 
-@api_bp.get("/stats")
+@api_bp.route('/stats', methods=['GET'])
 def get_stats():
-    """Get statistics about stored data"""
-    total_responses = SurveyResponse.query.count()
-    survey1_count = SurveyResponse.query.filter_by(survey_type="survey1").count()
-    survey2_count = SurveyResponse.query.filter_by(survey_type="survey2").count()
-
-    metadata = SurveyMetadata.query.all()
-
-    return jsonify({
-        "total_responses": total_responses,
-        "survey1_count": survey1_count,
-        "survey2_count": survey2_count,
-        "metadata": [
-            {
-                "survey_name": m.survey_name,
-                "survey_type": m.survey_type,
-                "total_responses": m.total_responses,
-                "last_fetched": m.last_fetched.isoformat() if m.last_fetched else None,
-            }
-            for m in metadata
-        ],
-    })
+    """Get dashboard statistics"""
+    try:        
+        total_responses = SurveyResponse.query.count()
+        
+        # Get unique survey types
+        survey_types = db.session.query(
+            SurveyResponse.survey_type
+        ).distinct().filter(
+            SurveyResponse.survey_type.isnot(None)
+        ).all()
+        survey_types = [st[0] for st in survey_types if st[0]]
+        
+        return jsonify({
+            'total_responses': total_responses,
+            'survey_types': survey_types
+        })
+    
+    except Exception as e:
+        current_app.logger.error(f"Stats error: {str(e)}")
+        return jsonify({
+            'error': str(e)
+        }), 500
 
 
 @api_bp.get("/responses")
@@ -232,3 +236,253 @@ def weekly_activity():
             "success": False,
             "message": str(e)
         }), 500
+
+# Ministry Rankings
+
+@api_bp.get("/analytics/ministry-rankings")
+def ministry_rankings():
+    """Get best and worst performing ministries grouped by parent ministry"""
+    try:
+        svc = AnalyticsService()
+        performance_data = svc.performance.mda_performance_table()
+        
+        # Group by parent ministry and aggregate scores
+        ministry_groups = {}
+        
+        for mda in performance_data:
+            parent = mda.get('parent_ministry', 'OTHER INDEPENDENT AGENCIES')
+            
+            if parent not in ministry_groups:
+                ministry_groups[parent] = {
+                    'ministry_name': parent,
+                    'total_mdas': 0,
+                    'total_expected': 0,
+                    'total_reported': 0,
+                    'total_responses': 0,
+                    'performance_scores': [],
+                    'compliance_rates': [],
+                }
+            
+            group = ministry_groups[parent]
+            group['total_mdas'] += 1
+            group['total_expected'] += mda.get('expected_projects', 0)
+            group['total_reported'] += mda.get('reported_projects', 0)
+            group['total_responses'] += mda.get('total_responses', 0)
+            group['performance_scores'].append(mda.get('performance_index', 0))
+            group['compliance_rates'].append(mda.get('compliance_rate_pct', 0))
+        
+        # Calculate averages and format output
+        rankings = []
+        for name, stats in ministry_groups.items():
+            avg_performance = sum(stats['performance_scores']) / len(stats['performance_scores']) if stats['performance_scores'] else 0
+            avg_compliance = sum(stats['compliance_rates']) / len(stats['compliance_rates']) if stats['compliance_rates'] else 0
+            
+            rankings.append({
+                'ministry_name': name,
+                'total_mdas': stats['total_mdas'],
+                'expected_projects': stats['total_expected'],
+                'reported_projects': stats['total_reported'],
+                'total_responses': stats['total_responses'],
+                'compliance_rate_pct': round(avg_compliance, 2),
+                'performance_index': round(avg_performance, 2),
+            })
+        
+        # Sort by performance index
+        rankings.sort(key=lambda x: x['performance_index'], reverse=True)
+        
+        # Get top 10 and bottom 10
+        best_10 = rankings[:10]
+        worst_10 = list(reversed(rankings[-10:])) if len(rankings) >= 10 else []
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "best": best_10,
+                "worst": worst_10,
+                "total_ministries": len(rankings)
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+# Export Routes
+
+@api_bp.route('/export/responses', methods=['GET'])
+def export_responses():
+    """
+    Export survey responses to Excel
+    
+    Query parameters:
+        - survey_type: Filter by survey type
+        - parent_ministry: Filter by parent ministry
+        - state: Filter by state
+        - project_status: Filter by project status
+        - start_date: Filter responses created after this date (YYYY-MM-DD)
+        - end_date: Filter responses created before this date (YYYY-MM-DD)
+        - format: Export format (default: xlsx)
+    
+    Returns:
+        Excel file download
+    """
+    try:
+        # Parse query parameters for filtering
+        filters = {}
+        
+        if request.args.get('survey_type'):
+            filters['survey_type'] = request.args.get('survey_type')
+        
+        if request.args.get('parent_ministry'):
+            filters['parent_ministry'] = request.args.get('parent_ministry')
+        
+        if request.args.get('state'):
+            filters['state'] = request.args.get('state')
+        
+        if request.args.get('project_status'):
+            filters['project_status'] = request.args.get('project_status')
+        
+        if request.args.get('start_date'):
+            try:
+                filters['start_date'] = datetime.strptime(
+                    request.args.get('start_date'), 
+                    '%Y-%m-%d'
+                )
+            except ValueError:
+                return jsonify({
+                    'error': 'Invalid start_date format. Use YYYY-MM-DD'
+                }), 400
+        
+        if request.args.get('end_date'):
+            try:
+                filters['end_date'] = datetime.strptime(
+                    request.args.get('end_date'), 
+                    '%Y-%m-%d'
+                )
+            except ValueError:
+                return jsonify({
+                    'error': 'Invalid end_date format. Use YYYY-MM-DD'
+                }), 400
+        
+        # Generate export
+        output, filename = ExportService.export_filtered_responses(filters)
+        
+        # Return file
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+    
+    except Exception as e:
+        current_app.logger.error(f"Export error: {str(e)}")
+        return jsonify({
+            'error': 'Failed to generate export',
+            'message': str(e)
+        }), 500
+
+
+@api_bp.route('/export/responses/preview', methods=['GET'])
+def export_preview():
+    """
+    Get a preview of what will be exported (first 10 records)
+    Returns JSON with column headers and sample data
+    """
+    try:
+        from app.models import SurveyResponse
+        
+        # Get first 10 responses
+        responses = SurveyResponse.query.order_by(
+            SurveyResponse.parent_ministry,
+            SurveyResponse.mda_name
+        ).limit(10).all()
+        
+        # Get column headers
+        headers = [header for header, _ in ExportService.EXPORT_COLUMNS]
+        
+        # Format preview data
+        preview_data = []
+        for response in responses:
+            row = {}
+            for header, field_name in ExportService.EXPORT_COLUMNS:
+                value = getattr(response, field_name, None)
+                row[header] = ExportService.format_cell_value(value, field_name)
+            preview_data.append(row)
+        
+        return jsonify({
+            'headers': headers,
+            'sample_data': preview_data,
+            'total_columns': len(headers),
+            'sample_rows': len(preview_data)
+        })
+    
+    except Exception as e:
+        current_app.logger.error(f"Preview error: {str(e)}")
+        return jsonify({
+            'error': 'Failed to generate preview',
+            'message': str(e)
+        }), 500
+
+# Add this endpoint to your routes/api.py for the export count feature (optional)
+
+@api_bp.route('/export/count', methods=['GET'])
+def export_count():
+    """
+    Get count of responses that would be exported with current filters
+    This is used for the preview feature in the export modal
+    """
+    try:        
+        query = SurveyResponse.query
+        
+        # Apply filters
+        if request.args.get('parent_ministry'):
+            query = query.filter_by(parent_ministry=request.args.get('parent_ministry'))
+        
+        if request.args.get('state'):
+            query = query.filter_by(state=request.args.get('state'))
+        
+        if request.args.get('project_status'):
+            query = query.filter_by(project_status=request.args.get('project_status'))
+        
+        if request.args.get('survey_type'):
+            query = query.filter_by(survey_type=request.args.get('survey_type'))
+        
+        if request.args.get('start_date'):
+            try:
+                start_date = datetime.strptime(
+                    request.args.get('start_date'), 
+                    '%Y-%m-%d'
+                )
+                query = query.filter(SurveyResponse.created >= start_date)
+            except ValueError:
+                pass
+        
+        if request.args.get('end_date'):
+            try:
+                end_date = datetime.strptime(
+                    request.args.get('end_date'), 
+                    '%Y-%m-%d'
+                )
+                query = query.filter(SurveyResponse.created <= end_date)
+            except ValueError:
+                pass
+        
+        count = query.count()
+        
+        return jsonify({
+            'success': True,
+            'count': count
+        })
+    
+    except Exception as e:
+        current_app.logger.error(f"Export count error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# Also update your /api/stats endpoint to include survey_types

@@ -409,11 +409,11 @@ class PerformanceAnalytics(AnalyticsBase):
             # MVP composite (0-100): tune weights later
             # 40% compliance + 20% submission + 20% completion + 10% evidence + 10% recency(0-10 scaled to 0-100)
             composite = (
-                0.40 * compliance_pct
-                + 0.20 * submission_rate_pct
-                + 0.20 * avg_completion_pct
-                + 0.10 * evidence_rate_proxy
-                + 0.10 * (recency_score_10 * 10.0)
+                1.00 * compliance_pct
+                # + 0.20 * submission_rate_pct
+                # + 0.20 * avg_completion_pct
+                # + 0.10 * evidence_rate_proxy
+                # + 0.10 * (recency_score_10 * 10.0)
             )
 
             out.append(
