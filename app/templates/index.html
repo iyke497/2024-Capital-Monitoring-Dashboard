@@ -21,10 +21,25 @@
 
 <div class="overview-grid">
     <div class="card stats-card">
-        <h3>Total Responses</h3>
-        <div id="total-responses" class="stat-val">0</div>
-        <div class="activity-chart-container">
-            <canvas id="activityChart"></canvas>
+        <!-- This container should hold BOTH the Total Responses and Response Activity sections -->
+        <div class="stats-header">
+            <div>
+                <h3>Total Responses</h3>
+                <div id="total-responses" class="stat-val">0</div>
+            </div>
+            
+            <div class="response-activity-section">
+                <div class="activity-header">
+                    <h3>Response Activity</h3>
+                    <div class="chart-toggle">
+                        <button class="timeframe-btn active" data-days="7">7 Days</button>
+                        <button class="timeframe-btn" data-days="30">30 Days</button>
+                    </div>
+                </div>
+                <div class="activity-chart-container">
+                    <canvas id="activityChart"></canvas>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -103,86 +118,8 @@
     </div>
 </div>
 
-<!-- Export Modal -->
-<div id="exportModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>Export Survey Responses</h3>
-            <span class="close">&times;</span>
-        </div>
-        
-        <div class="modal-body">
-            <p style="margin-bottom: 20px; color: #666;">
-                Export survey responses to Excel with optional filters. Leave filters empty to export all data.
-            </p>
-            
-            <form id="exportForm">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="filter-ministry">Parent Ministry</label>
-                        <select id="filter-ministry" name="parent_ministry">
-                            <option value="">All Ministries</option>
-                            <!-- Will be populated dynamically -->
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="filter-state">State</label>
-                        <select id="filter-state" name="state">
-                            <option value="">All States</option>
-                            <!-- Will be populated dynamically -->
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="filter-status">Project Status</label>
-                        <select id="filter-status" name="project_status">
-                            <option value="">All Statuses</option>
-                            <option value="Not Started">Not Started</option>
-                            <option value="Ongoing">Ongoing</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Suspended">Suspended</option>
-                            <option value="Cancelled">Cancelled</option>
-                        </select>
-                    </div>
-                    
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="filter-start-date">Start Date</label>
-                        <input type="date" id="filter-start-date" name="start_date">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="filter-end-date">End Date</label>
-                        <input type="date" id="filter-end-date" name="end_date">
-                    </div>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" id="resetFilters">Reset Filters</button>
-                    <button type="submit" class="btn btn-primary">
-                        <span id="exportBtnText">Export to Excel</span>
-                        <span id="exportBtnSpinner" style="display: none;">Exporting...</span>
-                    </button>
-                </div>
-            </form>
-            
-            <div id="exportPreview" style="margin-top: 20px; display: none;">
-                <p style="font-size: 14px; color: #666;">
-                    <strong>Preview:</strong> <span id="previewCount">0</span> responses will be exported
-                </p>
-            </div>
-        </div>
-    </div>
-</div>
-
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
-<script src="{{ url_for('static', filename='js/export.js') }}"></script>
 {% endblock %}
