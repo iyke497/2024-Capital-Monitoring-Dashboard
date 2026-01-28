@@ -136,6 +136,56 @@ class ActivityAnalytics(AnalyticsBase):
             )
         return out
 
+    def monthly_activity_summary(self) -> List[Dict[str, Any]]:
+        """
+        Returns daily response counts for the past 30 days.
+        """
+        
+        # Get responses from the last 30 days
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        
+        rows = (
+            self.session.query(
+                func.date(SurveyResponse.created_at).label("response_date"),
+                func.count(SurveyResponse.id).label("total_responses"),
+                func.sum(case((SurveyResponse.survey_type == "survey1", 1), else_=0)).label("survey1_count"),
+                func.sum(case((SurveyResponse.survey_type == "survey2", 1), else_=0)).label("survey2_count"),
+            )
+            .filter(SurveyResponse.created_at >= thirty_days_ago)
+            .group_by(func.date(SurveyResponse.created_at))
+            .order_by(func.date(SurveyResponse.created_at))
+            .all()
+        )
+        
+        # Create a dict of dates with counts
+        activity_by_date = {}
+        for r in rows:
+            date_str = r.response_date.isoformat() if hasattr(r.response_date, 'isoformat') else str(r.response_date)
+            activity_by_date[date_str] = {
+                "date": date_str,
+                "total": _safe_int(r.total_responses),
+                "survey1": _safe_int(r.survey1_count),
+                "survey2": _safe_int(r.survey2_count),
+            }
+        
+        # Fill in missing dates with zero counts
+        result = []
+        for i in range(30):
+            date = (datetime.utcnow() - timedelta(days=29-i)).date()
+            date_str = date.isoformat()
+            
+            if date_str in activity_by_date:
+                result.append(activity_by_date[date_str])
+            else:
+                result.append({
+                    "date": date_str,
+                    "total": 0,
+                    "survey1": 0,
+                    "survey2": 0,
+                })
+        
+        return result
+
     def weekly_activity_summary(self) -> List[Dict[str, Any]]:
         """
         Returns daily response counts for the past 7 days.

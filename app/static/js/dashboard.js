@@ -190,35 +190,58 @@ $(document).ready(function() {
     }
     
     // 8. Load and render weekly activity chart
-    function loadActivityChart() {
-        $.get('/api/analytics/weekly-activity', function(response) {
+    // 8. Load and render activity chart with specified timeframe
+    function loadActivityChart(days = 7) {
+        // Clear existing chart if it exists
+        const existingChart = Chart.getChart("activityChart");
+        if (existingChart) {
+            existingChart.destroy();
+        }
+        
+        // Update active button state
+        $('.timeframe-btn').removeClass('active');
+        $(`.timeframe-btn[data-days="${days}"]`).addClass('active');
+        
+        $.get(`/api/analytics/weekly-activity?days=${days}`, function(response) {
             if (response.success) {
                 const data = response.data;
                 const ctx = document.getElementById('activityChart');
                 
                 if (ctx) {
-                    // Format dates for labels (e.g., "Mon", "Tue")
+                    // Format dates for labels based on timeframe
                     const labels = data.map(d => {
                         const date = new Date(d.date);
-                        return date.toLocaleDateString('en-US', { weekday: 'short' });
+                        if (days === 7) {
+                            return date.toLocaleDateString('en-US', { weekday: 'short' });
+                        } else {
+                            // For 30 days, show day of month
+                            return date.getDate();
+                        }
                     });
                     
+                    // Determine chart type based on data density
+                    const chartType = days === 7 ? 'line' : 'bar';
+                    
                     new Chart(ctx, {
-                        type: 'line',
+                        type: chartType,
                         data: {
                             labels: labels,
                             datasets: [{
-                                label: 'Daily Responses',
+                                label: days === 7 ? 'Daily Responses' : 'Responses',
                                 data: data.map(d => d.total),
                                 borderColor: '#4baa73',
-                                backgroundColor: 'rgba(75, 170, 115, 0.1)',
+                                backgroundColor: days === 7 
+                                    ? 'rgba(75, 170, 115, 0.1)'
+                                    : 'rgba(75, 170, 115, 0.6)',
                                 tension: 0.3,
-                                fill: true,
+                                fill: days === 7,
                                 pointBackgroundColor: '#4baa73',
                                 pointBorderColor: '#fff',
                                 pointBorderWidth: 2,
-                                pointRadius: 4,
-                                pointHoverRadius: 6
+                                pointRadius: days === 7 ? 4 : 3,
+                                pointHoverRadius: days === 7 ? 6 : 4,
+                                borderWidth: days === 7 ? 2 : 0,
+                                borderRadius: days === 30 ? 4 : 0
                             }]
                         },
                         options: {
@@ -233,10 +256,19 @@ $(document).ready(function() {
                                         title: function(context) {
                                             const index = context[0].dataIndex;
                                             const date = new Date(data[index].date);
-                                            return date.toLocaleDateString('en-US', { 
-                                                month: 'short', 
-                                                day: 'numeric' 
-                                            });
+                                            if (days === 7) {
+                                                return date.toLocaleDateString('en-US', { 
+                                                    month: 'short', 
+                                                    day: 'numeric',
+                                                    year: 'numeric'
+                                                });
+                                            } else {
+                                                return date.toLocaleDateString('en-US', { 
+                                                    weekday: 'short',
+                                                    month: 'short', 
+                                                    day: 'numeric'
+                                                });
+                                            }
                                         },
                                         label: function(context) {
                                             return `Responses: ${context.parsed.y}`;
@@ -248,20 +280,25 @@ $(document).ready(function() {
                                 y: {
                                     beginAtZero: true,
                                     ticks: {
-                                        stepSize: 1,
+                                        stepSize: Math.max(1, Math.ceil(Math.max(...data.map(d => d.total)) / 5)),
                                         font: {
                                             size: 11
                                         }
                                     },
                                     grid: {
                                         color: 'rgba(0, 0, 0, 0.05)'
+                                    },
+                                    title: {
+                                        display: true,
+                                        text: 'Number of Responses'
                                     }
                                 },
                                 x: {
                                     ticks: {
                                         font: {
                                             size: 11
-                                        }
+                                        },
+                                        maxRotation: days === 30 ? 45 : 0
                                     },
                                     grid: {
                                         display: false
@@ -270,10 +307,13 @@ $(document).ready(function() {
                             }
                         }
                     });
+                    
+                    // Update chart title
+                    //$('.stats-card h3').text(`Response Activity (${days} Days)`);
                 }
             }
         }).fail(function(error) {
-            console.error('Failed to load weekly activity data:', error);
+            console.error('Failed to load activity data:', error);
         });
     }
 
@@ -364,11 +404,17 @@ $(document).ready(function() {
 
     // 11. Initial load
     updateStats();
-    loadActivityChart();
+    loadActivityChart(7);
     loadBudgetChart();
     loadMinistryRankings();
     checkStatus();
 
     // 12. Poll server status every 10 seconds
     setInterval(checkStatus, 10000);
+
+    // 13. Timeframe toggle functionality
+    $('.timeframe-btn').on('click', function() {
+        const days = parseInt($(this).data('days'));
+        loadActivityChart(days);
+    });
 });

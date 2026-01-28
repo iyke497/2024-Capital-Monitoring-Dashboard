@@ -224,13 +224,27 @@ def budget_reporting_overview():
 @api_bp.get("/analytics/weekly-activity")
 def weekly_activity():
     """Get daily response counts for the past 7 days"""
+    days = request.args.get('days', default=7, type=int)
+
+    if days not in [7, 30]:
+        days = 7
+
     try:
         svc = AnalyticsService()
-        data = svc.activity.weekly_activity_summary()
-        return jsonify({
-            "success": True,
-            "data": data
-        })
+
+        if days == 30:
+            data = svc.activity.monthly_activity_summary()
+
+            return jsonify({
+                "success": True,
+                "data": data
+            })
+        else:
+            data = svc.activity.weekly_activity_summary()
+            return jsonify({
+                "success": True,
+                "data": data
+            })
     except Exception as e:
         return jsonify({
             "success": False,

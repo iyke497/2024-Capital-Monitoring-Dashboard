@@ -231,6 +231,36 @@ table.dataTable tbody td {
     justify-content: center;
 }
 
+/* Chart timeframe toggle */
+.stats-card .chart-toggle {
+    display: flex;
+    gap: 5px;
+    border-radius: 20px;
+    padding: 0px;
+}
+
+.stats-card .timeframe-btn {
+    padding: 0px 15px;
+    border: none;
+    border-radius: 16px;
+    background: transparent;
+    color: var(--text-dark);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.stats-card .timeframe-btn:hover {
+    background: rgba(75, 170, 115, 0.2);
+    color: var(--eyemark-green);
+}
+
+.stats-card .timeframe-btn.active {
+    background: var(--eyemark-green);
+    color: white;
+}
+
 .table-card {
     margin-top: 20px;
 }
