@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/mda-searchable-dropdown.css') }}">
 </head>
 <body>
     <div class="header-bar">
@@ -61,11 +62,32 @@
                         </div>
                         
                         <div class="form-group">
-                            <label for="filter-state">State</label>
-                            <select id="filter-state" name="state">
-                                <option value="">All States</option>
-                                <!-- Will be populated dynamically -->
-                            </select>
+                            <label for="filter-mda">MDA</label>
+                            <!-- Hidden input to store the selected value -->
+                            <input type="hidden" id="filter-mda" name="mda_name" value="">
+                            
+                            <!-- Searchable dropdown interface -->
+                            <div class="mda-search-wrapper">
+                                <!-- Search input (shown by default) -->
+                                <div class="mda-search-container">
+                                    <input 
+                                        type="text" 
+                                        id="mda-search-input" 
+                                        class="mda-search-input" 
+                                        placeholder="Search for an MDA..."
+                                        autocomplete="off"
+                                    >
+                                </div>
+                                
+                                <!-- Selected MDA display (hidden by default) -->
+                                <div id="selected-mda-display" class="selected-mda-display" style="display: none;">
+                                    <span class="selected-mda-text"></span>
+                                    <button type="button" id="clear-mda-selection" class="clear-mda-btn" title="Clear selection">×</button>
+                                </div>
+                                
+                                <!-- Dropdown list -->
+                                <div id="mda-dropdown-list" class="mda-dropdown-list"></div>
+                            </div>
                         </div>
                     </div>
                     
@@ -81,7 +103,14 @@
                                 <option value="Cancelled">Cancelled</option>
                             </select>
                         </div>
-                        
+
+                        <div class="form-group">
+                            <label for="filter-state">State</label>
+                            <select id="filter-state" name="state">
+                                <option value="">All States</option>
+                                <!-- Will be populated dynamically -->
+                            </select>
+                        </div>
                     </div>
                     
                     <div class="form-row">

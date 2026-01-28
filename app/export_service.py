@@ -230,6 +230,9 @@ class ExportService:
             
             if 'parent_ministry' in query_filters:
                 query = query.filter_by(parent_ministry=query_filters['parent_ministry'])
+
+            if 'mda_name' in query_filters:
+                query = query.filter_by(mda_name=query_filters['mda_name'])
             
             if 'state' in query_filters:
                 query = query.filter_by(state=query_filters['state'])

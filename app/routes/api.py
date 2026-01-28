@@ -334,6 +334,7 @@ def export_responses():
         - survey_type: Filter by survey type
         - parent_ministry: Filter by parent ministry
         - state: Filter by state
+        - mda_name: Filter by MDA name
         - project_status: Filter by project status
         - start_date: Filter responses created after this date (YYYY-MM-DD)
         - end_date: Filter responses created before this date (YYYY-MM-DD)
@@ -351,6 +352,9 @@ def export_responses():
         
         if request.args.get('parent_ministry'):
             filters['parent_ministry'] = request.args.get('parent_ministry')
+        
+        if request.args.get('mda_name'):
+            filters['mda_name'] = request.args.get('mda_name')
         
         if request.args.get('state'):
             filters['state'] = request.args.get('state')
@@ -454,6 +458,9 @@ def export_count():
         # Apply filters
         if request.args.get('parent_ministry'):
             query = query.filter_by(parent_ministry=request.args.get('parent_ministry'))
+
+        if request.args.get('mda_name'):
+            query = query.filter_by(mda_name=request.args.get('mda_name'))
         
         if request.args.get('state'):
             query = query.filter_by(state=request.args.get('state'))
@@ -498,5 +505,44 @@ def export_count():
             'error': str(e)
         }), 500
 
-
-# Also update your /api/stats endpoint to include survey_types
+@api_bp.get("/export/filters")
+def get_export_filters():
+    """Get available filter options for export modal"""
+    try:
+        # Get unique parent ministries
+        ministries = db.session.query(
+            SurveyResponse.parent_ministry
+        ).distinct().filter(
+            SurveyResponse.parent_ministry.isnot(None)
+        ).order_by(SurveyResponse.parent_ministry).all()
+        ministries = [m[0] for m in ministries]
+        
+        # Get unique states
+        states = db.session.query(
+            SurveyResponse.state
+        ).distinct().filter(
+            SurveyResponse.state.isnot(None)
+        ).order_by(SurveyResponse.state).all()
+        states = [s[0] for s in states]
+        
+        # Get unique MDAs
+        mdas = db.session.query(
+            SurveyResponse.mda_name
+        ).distinct().filter(
+            SurveyResponse.mda_name.isnot(None)
+        ).order_by(SurveyResponse.mda_name).all()
+        mdas = [m[0] for m in mdas]
+        
+        return jsonify({
+            'success': True,
+            'parent_ministries': ministries,
+            'states': states,
+            'mdas': mdas
+        })
+    
+    except Exception as e:
+        current_app.logger.error(f"Export filters error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
