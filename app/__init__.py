@@ -2,7 +2,7 @@
 from flask import Flask
 from flask_migrate import Migrate
 from .config import Config
-from .database import db
+from .database import db, init_db
 from .routes.main import main_bp
 from .routes.api import api_bp
 from .routes.admin import admin_bp
@@ -21,9 +21,8 @@ def create_app(config_class=Config):
     db.init_app(app)
     migrate.init_app(app, db)
 
-    # create tables once at startup
-    with app.app_context():
-        db.create_all()
+    # Initialize database with WAL mode and create tables
+    init_db(app)
 
     # register blueprints
     app.register_blueprint(main_bp)
@@ -57,3 +56,4 @@ def register_cli_commands(app):
     
     # Register the commands defined in cli.py
     app.cli.add_command(cli.data)
+    app.cli.add_command(cli.db_manage)

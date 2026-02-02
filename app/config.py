@@ -22,6 +22,17 @@ class Config:
         f'sqlite:///{BASE_DIR / "instance" / "survey_data.db"}'
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # WAL and Conncurrent Access Settings
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'connect_args': {
+            'timeout': 60,  # Increase timeout for busy database
+            'check_same_thread': False,  # Allow multi-threaded access
+        },
+        'pool_pre_ping': True,  # Verify connections before using them
+        'pool_recycle': 3600,  # Recycle connections after 1 hour
+        'echo': False,  # Set to True for SQL debugging
+    }
     
     # API Configuration for Survey 1
     SURVEY1_BASE_URL = os.getenv('SURVEY1_BASE_URL')
