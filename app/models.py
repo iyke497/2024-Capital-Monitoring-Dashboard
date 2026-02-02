@@ -81,6 +81,10 @@ class SurveyResponse(db.Model):
     # Audit timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # ===== NEW FIELD FOR RELATIONSHIP =====
+    ministry_agency_id = db.Column(db.Integer, db.ForeignKey('ministry_agencies.id'), nullable=True)
+    ministry_agency = db.relationship('MinistryAgency', backref='survey_responses')
     
     # ===== INDEXES FOR PERFORMANCE =====
     __table_args__ = (
@@ -213,18 +217,198 @@ class SurveyMetadata(db.Model):
         }
 
 class BudgetProject2024(db.Model):
-    """Stores the approved 2024 budget projects for compliance tracking."""
+    """Stores the approved 2024 budget projects with GIFMIS codes for exact matching."""
     __tablename__ = 'budget_projects_2024'
     
     id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(50), index=True, nullable=False, unique=True) # ERGP Code
+    code = db.Column(db.String(50), nullable=False)  # ERGP Code - no longer unique
+    
+    # Project details
     project_name = db.Column(db.Text)
     status_type = db.Column(db.String(100))
     appropriation = db.Column(db.Numeric(20, 2))
     
-    # Normalized fields for clean joining/aggregation
-    ministry = db.Column(db.String(250))
-    agency = db.Column(db.String(250))
-    agency_normalized = db.Column(db.String(250), index=True)
-
+    # ===== ENHANCED: GIFMIS CODING SYSTEM =====
+    ministry_code = db.Column(db.String(10), nullable=True)
+    ministry_name = db.Column(db.String(250))
+    
+    agency_code = db.Column(db.String(12), nullable=True)    # May be null
+    agency_name = db.Column(db.String(250))
+    
+    # Normalized fields for fuzzy matching (backup)
+    agency_normalized = db.Column(db.String(250))
+    
+    # Audit
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # NEW: Composite unique constraint with agency_code NULL handling
+    __table_args__ = (
+        # Create a composite unique constraint on code + COALESCE(agency_code, 'NULL')
+        db.Index('idx_unique_ergp_agency', 
+                 code, 
+                 db.func.coalesce(agency_code, 'NULL'),
+                 unique=True),
+        db.Index('idx_agency_code', 'agency_code'),
+        db.Index('idx_ministry_code', 'ministry_code'),
+        db.Index('idx_code_ministry', 'code', 'ministry_code'),
+    )
+
+class MinistryAgency(db.Model):
+    """Normalized reference table for ministries and their agencies from GIFMIS coding system"""
+    __tablename__ = 'ministry_agencies'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # ===== GIFMIS CODING SYSTEM =====
+    ministry_code = db.Column(db.String(10), nullable=False, index=True)
+    agency_code = db.Column(db.String(12), unique=True, nullable=False, index=True)
+    
+    # ===== OFFICIAL NAMES =====
+    agency_name = db.Column(db.String(300), nullable=False)
+    ministry_name = db.Column(db.String(300), nullable=False)
+    
+    # ===== NORMALIZED NAMES FOR MATCHING =====
+    agency_name_normalized = db.Column(db.String(300), index=True)
+    ministry_name_normalized = db.Column(db.String(300), index=True)
+    
+    # ===== HIERARCHY INFORMATION =====
+    is_self_accounting = db.Column(db.Boolean, default=False)  # Agencies that are also ministries
+    is_parastatal = db.Column(db.Boolean, default=False)
+    
+    # ===== METADATA =====
+    is_active = db.Column(db.Boolean, default=True)
+    fiscal_year = db.Column(db.String(4), default='2024')  # For versioning by fiscal year
+    
+    # ===== AUDIT =====
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # ===== INDEXES =====
+    __table_args__ = (
+        db.Index('idx_ministry_agency', 'ministry_code', 'agency_code'),
+        db.Index('idx_agency_name_search', 'agency_name_normalized'),
+        db.Index('idx_ministry_search', 'ministry_name_normalized'),
+        db.Index('idx_fiscal_year', 'fiscal_year', 'is_active'),
+    )
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Auto-generate normalized names if not provided
+        if not self.agency_name_normalized and self.agency_name:
+            self.agency_name_normalized = self.normalize_name(self.agency_name)
+        if not self.ministry_name_normalized and self.ministry_name:
+            self.ministry_name_normalized = self.normalize_name(self.ministry_name)
+        
+        # Auto-detect if agency is self-accounting (ministry equals agency)
+        if self.agency_name == self.ministry_name:
+            self.is_self_accounting = True
+    
+    @staticmethod
+    def normalize_name(name):
+        """
+        Even simpler normalization - just uppercase and clean whitespace.
+        For cases where conservative normalization fails.
+        """
+        if not name or not isinstance(name, str):
+            return ""
+        
+        normalized = name.upper().strip()
+        
+        # Just remove extra spaces and standardize AND
+        normalized = normalized.replace('&', ' AND ')
+        normalized = ' '.join(normalized.split())
+        
+        return normalized
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'ministry_code': self.ministry_code,
+            'agency_code': self.agency_code,
+            'agency_name': self.agency_name,
+            'ministry_name': self.ministry_name,
+            'agency_name_normalized': self.agency_name_normalized,
+            'ministry_name_normalized': self.ministry_name_normalized,
+            'is_self_accounting': self.is_self_accounting,
+            'is_parastatal': self.is_parastatal,
+            'is_active': self.is_active,
+            'fiscal_year': self.fiscal_year,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+    
+    @classmethod
+    def find_agency_by_name(cls, name, threshold=0.85):
+        """Fuzzy find agency by name with similarity threshold"""
+        from difflib import SequenceMatcher
+        
+        normalized_search = cls.normalize_name(name)
+        
+        # First try exact match on normalized name
+        exact_match = cls.query.filter(
+            cls.agency_name_normalized == normalized_search,
+            cls.is_active == True
+        ).first()
+        
+        if exact_match:
+            return exact_match
+        
+        # Fall back to fuzzy matching
+        all_agencies = cls.query.filter(cls.is_active == True).all()
+        best_match = None
+        best_score = 0
+        
+        for agency in all_agencies:
+            score = SequenceMatcher(
+                None, 
+                normalized_search, 
+                agency.agency_name_normalized
+            ).ratio()
+            
+            if score > best_score and score >= threshold:
+                best_score = score
+                best_match = agency
+        
+        return best_match
+    
+    @classmethod
+    def get_agencies_by_ministry(cls, ministry_code=None, ministry_name=None):
+        """Get all agencies under a ministry"""
+        query = cls.query.filter(cls.is_active == True)
+        
+        if ministry_code:
+            query = query.filter(cls.ministry_code == ministry_code)
+        elif ministry_name:
+            normalized = cls.normalize_name(ministry_name)
+            query = query.filter(cls.ministry_name_normalized == normalized)
+        
+        return query.order_by(cls.agency_name).all()
+    
+    @classmethod
+    def get_ministry_hierarchy(cls):
+        """Get hierarchical structure of ministries and their agencies"""
+        ministries = {}
+        
+        # Get all active records
+        records = cls.query.filter(cls.is_active == True).order_by(
+            cls.ministry_code, cls.agency_code
+        ).all()
+        
+        for record in records:
+            ministry_key = f"{record.ministry_code}|{record.ministry_name}"
+            
+            if ministry_key not in ministries:
+                ministries[ministry_key] = {
+                    'ministry_code': record.ministry_code,
+                    'ministry_name': record.ministry_name,
+                    'agencies': []
+                }
+            
+            ministries[ministry_key]['agencies'].append({
+                'agency_code': record.agency_code,
+                'agency_name': record.agency_name,
+                'is_self_accounting': record.is_self_accounting,
+                'is_parastatal': record.is_parastatal
+            })
+        
+        return list(ministries.values())

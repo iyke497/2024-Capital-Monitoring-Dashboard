@@ -1,13 +1,16 @@
 # app/__init__.py
 from flask import Flask
+from flask_migrate import Migrate
 from .config import Config
 from .database import db
 from .routes.main import main_bp
 from .routes.api import api_bp
+from .routes.admin import admin_bp
 from .scheduler import init_scheduler
 import sys
 import os
 
+migrate = Migrate()
 
 def create_app(config_class=Config):
     """Application factory."""
@@ -16,6 +19,7 @@ def create_app(config_class=Config):
 
     # init extensions
     db.init_app(app)
+    migrate.init_app(app, db)
 
     # create tables once at startup
     with app.app_context():
@@ -24,6 +28,10 @@ def create_app(config_class=Config):
     # register blueprints
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
+    app.register_blueprint(admin_bp)
+
+    # ===== REGISTER CLI COMMANDS =====
+    register_cli_commands(app)
 
     if app.config.get('SCHEDULER_ENABLED', True):
         # Check if we're in Flask reloader parent process
@@ -37,3 +45,15 @@ def create_app(config_class=Config):
         print("⏸️  Scheduler disabled by config", file=sys.stderr)
 
     return app
+
+def register_cli_commands(app):
+    """Register CLI commands with the Flask app."""
+    # Import CLI commands
+    import cli
+
+    # Register the data command group from cli module
+    # The app instance in cli.py needs to be the same as this one
+    # We'll pass this app instance to cli module
+    
+    # Register the commands defined in cli.py
+    app.cli.add_command(cli.data)

@@ -1,14 +1,11 @@
 # cli.py
 import click
-from app import create_app
+from flask import current_app
 from app.data_cleaner import DataCleaner
 from app.models import BudgetProject2024
 from app.database import db
 
-# Define the custom Flask application instance
-app = create_app()
-
-@app.cli.group()
+@click.group()
 def data():
     """Manages foundational data tasks (e.g., budget ingestion)."""
     pass
@@ -21,7 +18,7 @@ def ingest_budget_data(file_path):
     Example: flask data ingest-budget /path/to/2024_Amended.xlsx\ -\ Sheet1.csv
     """
     # Check if the table already has data
-    with app.app_context():
+    with current_app.app_context():
         if BudgetProject2024.query.first():
             click.echo("❌ Budget data already exists in the database. Skipping ingestion.")
             return

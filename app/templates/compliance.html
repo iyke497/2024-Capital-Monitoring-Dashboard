@@ -3,18 +3,24 @@
 {% block title %}Eyemark - Compliance{% endblock %}
 {% block header %}MDA Compliance Metrics{% endblock %}
 
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/compliance.css') }}">
+{% endblock %}
+
 {% block content %}
+    <!-- Tab Navigation -->
     <div class="row">
         <div class="twelve columns">
-            <ul class="tab-nav" style="display: flex; list-style: none; border-bottom: 2px solid #eee; padding-bottom: 10px; gap: 20px;">
+            <ul class="tab-nav">
                 <li><a href="#" class="button tab-link active" onclick="showTab('mda-tab')">MDA Level</a></li>
                 <li><a href="#" class="button tab-link" onclick="showTab('ministry-tab')">Ministry Level</a></li>
             </ul>
         </div>
     </div>
 
+    <!-- MDA Tab -->
     <div id="mda-tab" class="tab-content">
-        <h3>Project Compliance per MDA</h3>
+        <h3 id="mda-title">Project Compliance per MDA</h3>
         <table id="mda-table" class="display" style="width:100%">
             <thead>
                 <tr>
@@ -29,6 +35,7 @@
         </table>
     </div>
 
+    <!-- Ministry Tab -->
     <div id="ministry-tab" class="tab-content" style="display:none;">
         <h3>Ministry Summary Info</h3>
         <table id="ministry-table" class="display" style="width:100%">
@@ -43,78 +50,44 @@
             </thead>
         </table>
     </div>
+
+    <!-- Project Details Modal -->
+    <div id="project-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 id="modal-title">MDA Project Details</h4>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="modal-summary" style="margin-bottom: 20px;">
+                    <p><strong>MDA:</strong> <span id="modal-mda-name"></span></p>
+                    <p><strong>Expected Projects:</strong> <span id="modal-expected"></span></p>
+                    <p><strong>Reported Projects:</strong> <span id="modal-reported"></span></p>
+                    <p><strong>Compliance Rate:</strong> <span id="modal-compliance"></span></p>
+                </div>
+                <div class="table-container">
+                    <table id="project-details-table" class="project-table">
+                        <thead>
+                            <tr>
+                                <th>Project Code</th>
+                                <th>Project Title</th>
+                                <th>Budget Allocation (₦)</th>
+                                <th>Reporting Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="button button-primary" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+    </div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-function showTab(tabId) {
-    // Toggle Visibility
-    $('.tab-content').hide();
-    $(`#${tabId}`).show();
-    
-    // Toggle Button Styles
-    $('.tab-link').removeClass('button-primary');
-    $(`[onclick="showTab('${tabId}')"]`).addClass('button-primary');
-}
-
-$(document).ready(function() {
-    // 1. Initialize MDA Table
-    // Assign to a variable that is accessible to the click handler
-    window.mdaTable = $('#mda-table').DataTable({
-        ajax: { url: '/api/compliance/mda', dataSrc: 'data' },
-        columns: [
-            { data: 'mda_name' },
-            { data: 'parent_ministry', visible: false }, // Index 1
-            { data: 'expected_projects', className: 'dt-body-center' },
-            { data: 'reported_projects', className: 'dt-body-center' },
-            { data: 'total_responses', className: 'dt-body-center' },
-            { 
-                data: 'compliance_rate_pct', 
-                render: function(data) {
-                    let color = data >= 80 ? '#2e7d32' : (data >= 50 ? '#f57c00' : '#d32f2f');
-                    return `<strong style="color: ${color}">${data.toFixed(2)}%</strong>`;
-                }
-            }
-        ]
-    });
-
-    // 2. Initialize Ministry Table
-    const ministryTable = $('#ministry-table').DataTable({
-        ajax: { url: '/api/compliance/ministry', dataSrc: 'data' },
-        columns: [
-            { data: 'ministry_name', className: 'clickable-min' },
-            { data: 'mda_count' },
-            { data: 'total_responses' },
-            { 
-                data: 'total_budget', 
-                render: $.fn.dataTable.render.number(',', '.', 2, '₦') 
-            },
-            { data: 'avg_completion', render: d => `<strong>${d}%</strong>` }
-        ]
-    });
-
-    // 3. Drill-Down Handler
-    $('#ministry-table tbody').on('click', 'tr', function() {
-        const rowData = ministryTable.row(this).data();
-        if (!rowData) return;
-
-        const minName = rowData.ministry_name;
-
-        // Filter the MDA table by the hidden parent_ministry column (index 1)
-        mdaTable.column(1).search(minName).draw();
-
-        showTab('mda-tab');
-        $('#mda-tab h3').html(`Agencies under: ${minName} <button class="button" onclick="resetMdaFilter()">Clear Filter</button>`);
-    });
-
-    // window.resetMdaFilter = function() {
-    //     mdaTable.column(1).search('').draw();
-    //     $('#mda-tab h3').html('Project Compliance per MDA');
-    // };
-    window.resetMdaFilter = function() {
-        window.mdaTable.column(1).search('').draw();
-        $('#mda-tab h3').html('Project Compliance per MDA');
-    };
-});
-</script>
+<script src="{{ url_for('static', filename='js/compliance.js') }}"></script>
 {% endblock %}
