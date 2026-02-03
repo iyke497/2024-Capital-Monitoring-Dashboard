@@ -1,0 +1,120 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Edit Survey Response{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Edit Survey Response</h1>
+    <p>Limited editing of survey response fields</p>
+</div>
+
+<div class="alert alert-info">
+    <strong>Note:</strong> Only specific fields can be edited. Most survey data is read-only to maintain data integrity.
+</div>
+
+<div class="card">
+    <form method="POST">
+        <h3>Editable Fields</h3>
+        
+        <div class="form-group">
+            <label for="project_status">Project Status</label>
+            <select id="project_status" name="project_status">
+                <option value="">-</option>
+                <option value="Not Started" {% if survey_response.project_status == 'Not Started' %}selected{% endif %}>Not Started</option>
+                <option value="Ongoing" {% if survey_response.project_status == 'Ongoing' %}selected{% endif %}>Ongoing</option>
+                <option value="Completed" {% if survey_response.project_status == 'Completed' %}selected{% endif %}>Completed</option>
+                <option value="Suspended" {% if survey_response.project_status == 'Suspended' %}selected{% endif %}>Suspended</option>
+                <option value="Abandoned" {% if survey_response.project_status == 'Abandoned' %}selected{% endif %}>Abandoned</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="project_categorisation">Project Categorization</label>
+            <select id="project_categorisation" name="project_categorisation">
+                <option value="">-</option>
+                <option value="Capital Project" {% if survey_response.project_categorisation == 'Capital Project' %}selected{% endif %}>Capital Project</option>
+                <option value="Constituency Project" {% if survey_response.project_categorisation == 'Constituency Project' %}selected{% endif %}>Constituency Project</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="execution_method">Execution Method</label>
+            <select id="execution_method" name="execution_method">
+                <option value="">-</option>
+                <option value="OUTSOURCED" {% if survey_response.execution_method == 'OUTSOURCED' %}selected{% endif %}>Outsourced</option>
+                <option value="IN HOUSE" {% if survey_response.execution_method == 'IN HOUSE' %}selected{% endif %}>In House</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <input type="checkbox" 
+                   id="completion_cert_issued" 
+                   name="completion_cert_issued"
+                   {% if survey_response.completion_cert_issued %}checked{% endif %}>
+            <label for="completion_cert_issued" class="checkbox-label">
+                Job Completion Certificate Issued
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="state">State</label>
+            <input type="text" 
+                   id="state" 
+                   name="state" 
+                   value="{{ survey_response.state or '' }}"
+                   placeholder="Enter state">
+        </div>
+        
+        <div class="form-group">
+            <label for="lga">LGA</label>
+            <input type="text" 
+                   id="lga" 
+                   name="lga" 
+                   value="{{ survey_response.lga or '' }}"
+                   placeholder="Enter LGA">
+        </div>
+        
+        <div class="form-group">
+            <label for="ward">Ward</label>
+            <input type="text" 
+                   id="ward" 
+                   name="ward" 
+                   value="{{ survey_response.ward or '' }}"
+                   placeholder="Enter ward">
+        </div>
+        
+        <div class="form-group">
+            <label for="ministry_agency_id">Ministry Agency Link</label>
+            <select id="ministry_agency_id" name="ministry_agency_id">
+                <option value="">-</option>
+                {% for ma in ministry_agencies %}
+                    <option value="{{ ma.id }}" 
+                            {% if survey_response.ministry_agency_id == ma.id %}selected{% endif %}>
+                        {{ ma.agency_name }} ({{ ma.ministry_name }})
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="actions" style="gap: 10px; margin-top: 30px;">
+            <button type="submit" class="btn btn-success">
+                Update Survey Response
+            </button>
+            <a href="{{ url_for('admin.survey_response_view', id=survey_response.id) }}" class="btn btn-secondary">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h3>Read-Only Information</h3>
+    <p><strong>Project Name:</strong> {{ survey_response.project_name or '-' }}</p>
+    <p><strong>ERGP Code:</strong> {{ survey_response.ergp_code or '-' }}</p>
+    <p><strong>MDA Name:</strong> {{ survey_response.mda_name or '-' }}</p>
+    <p><strong>Parent Ministry:</strong> {{ survey_response.parent_ministry or '-' }}</p>
+    <p class="text-muted" style="margin-top: 15px; font-size: 13px;">
+        These fields cannot be edited through the admin interface. They are populated from survey submissions.
+    </p>
+</div>
+{% endblock %}

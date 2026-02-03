@@ -1,0 +1,172 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Survey Response Details{% endblock %}
+
+{% block content %}
+<div class="page-header flex-between">
+    <div>
+        <h1>Survey Response Details</h1>
+        <p>ID: {{ survey_response.id }} | Public ID: {{ survey_response.public_id }}</p>
+    </div>
+    <div class="actions" style="gap: 10px;">
+        {% if allow_edit %}
+        <a href="{{ url_for('admin.survey_response_edit', id=survey_response.id) }}" class="btn btn-success">
+            Edit Response
+        </a>
+        {% endif %}
+        <a href="{{ url_for('admin.survey_responses_list') }}" class="btn btn-secondary">
+            Back to List
+        </a>
+    </div>
+</div>
+
+<!-- Response Metadata -->
+<div class="card">
+    <h3>Response Metadata</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+        <div><strong>Survey Name:</strong> {{ survey_response.survey_name or '-' }}</div>
+        <div><strong>Survey Type:</strong> {{ survey_response.survey_type or '-' }}</div>
+        <div><strong>Owner:</strong> {{ survey_response.owner_display_name or '-' }}</div>
+        <div><strong>Organization:</strong> {{ survey_response.organization_name or '-' }}</div>
+        <div><strong>Status:</strong> {{ survey_response.survey_response_status or '-' }}</div>
+        <div><strong>Completion:</strong> {{ survey_response.percentage_completed or 0 }}%</div>
+        <div><strong>Created:</strong> {{ survey_response.created.strftime('%Y-%m-%d %H:%M') if survey_response.created else '-' }}</div>
+        <div><strong>Updated:</strong> {{ survey_response.updated.strftime('%Y-%m-%d %H:%M') if survey_response.updated else '-' }}</div>
+    </div>
+</div>
+
+<!-- Project Basic Information -->
+<div class="card">
+    <h3>Project Information</h3>
+    <div style="margin-bottom: 15px;">
+        <strong>Project Name:</strong><br>
+        {{ survey_response.project_name or '-' }}
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+        <div><strong>ERGP Code:</strong> {{ survey_response.ergp_code or '-' }}</div>
+        <div><strong>Project Type:</strong> {{ survey_response.project_type or '-' }}</div>
+        <div><strong>Parent Ministry:</strong> {{ survey_response.parent_ministry or '-' }}</div>
+        <div><strong>MDA Name:</strong> {{ survey_response.mda_name or '-' }}</div>
+        <div><strong>Categorization:</strong> {{ survey_response.project_categorisation or '-' }}</div>
+        <div><strong>Execution Method:</strong> {{ survey_response.execution_method or '-' }}</div>
+    </div>
+    {% if survey_response.strategic_objective %}
+    <div style="margin-top: 15px;">
+        <strong>Strategic Objective:</strong><br>
+        {{ survey_response.strategic_objective }}
+    </div>
+    {% endif %}
+    {% if survey_response.key_performance_indicators %}
+    <div style="margin-top: 15px;">
+        <strong>Key Performance Indicators:</strong><br>
+        {{ survey_response.key_performance_indicators }}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Financial Information -->
+<div class="card">
+    <h3>Financial Information</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+        <div>
+            <strong>2024 Appropriation:</strong><br>
+            {% if survey_response.project_appropriation_2024 %}
+                ₦{{ "{:,.2f}".format(survey_response.project_appropriation_2024) }}
+            {% else %}
+                -
+            {% endif %}
+        </div>
+        <div>
+            <strong>Amount Released 2024:</strong><br>
+            {% if survey_response.amount_released_2024 %}
+                ₦{{ "{:,.2f}".format(survey_response.amount_released_2024) }}
+            {% else %}
+                -
+            {% endif %}
+        </div>
+        <div>
+            <strong>Amount Utilized 2024:</strong><br>
+            {% if survey_response.amount_utilized_2024 %}
+                ₦{{ "{:,.2f}".format(survey_response.amount_utilized_2024) }}
+            {% else %}
+                -
+            {% endif %}
+        </div>
+        <div>
+            <strong>Total Cost Planned:</strong><br>
+            {% if survey_response.total_cost_planned %}
+                ₦{{ "{:,.2f}".format(survey_response.total_cost_planned) }}
+            {% else %}
+                -
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Project Status & Timeline -->
+<div class="card">
+    <h3>Project Status & Timeline</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+        <div><strong>Project Status:</strong> {{ survey_response.project_status or '-' }}</div>
+        <div><strong>Completion Certificate Issued:</strong> {{ 'Yes' if survey_response.completion_cert_issued else 'No' }}</div>
+        <div><strong>Start Date:</strong> {{ survey_response.start_date.strftime('%Y-%m-%d') if survey_response.start_date else '-' }}</div>
+        <div><strong>End Date:</strong> {{ survey_response.end_date.strftime('%Y-%m-%d') if survey_response.end_date else '-' }}</div>
+    </div>
+    {% if survey_response.project_achievements %}
+    <div style="margin-top: 15px;">
+        <strong>Project Achievements:</strong><br>
+        {{ survey_response.project_achievements }}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Contractor Information -->
+{% if survey_response.contractor_name or survey_response.contractor_rc_numbers %}
+<div class="card">
+    <h3>Contractor Information</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+        <div><strong>Contractor Name:</strong> {{ survey_response.contractor_name or '-' }}</div>
+        <div><strong>RC Numbers:</strong> {{ survey_response.contractor_rc_numbers or '-' }}</div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Geographical Information -->
+<div class="card">
+    <h3>Geographical Information</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+        <div><strong>State:</strong> {{ survey_response.state or '-' }}</div>
+        <div><strong>LGA:</strong> {{ survey_response.lga or '-' }}</div>
+        <div><strong>Ward:</strong> {{ survey_response.ward or '-' }}</div>
+    </div>
+    {% if survey_response.geolocations %}
+    <div style="margin-top: 15px;">
+        <strong>Geolocations:</strong><br>
+        {{ survey_response.geolocations }}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Challenges & Recommendations -->
+{% if survey_response.challenges_recommendations %}
+<div class="card">
+    <h3>Challenges & Recommendations</h3>
+    <p>{{ survey_response.challenges_recommendations }}</p>
+</div>
+{% endif %}
+
+<!-- Ministry Agency Link -->
+<div class="card">
+    <h3>Ministry Agency Relationship</h3>
+    {% if survey_response.ministry_agency %}
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+        <div><strong>Linked Agency:</strong> {{ survey_response.ministry_agency.agency_name }}</div>
+        <div><strong>Ministry:</strong> {{ survey_response.ministry_agency.ministry_name }}</div>
+        <div><strong>Agency Code:</strong> {{ survey_response.ministry_agency.agency_code }}</div>
+        <div><strong>Ministry Code:</strong> {{ survey_response.ministry_agency.ministry_code }}</div>
+    </div>
+    {% else %}
+    <p class="text-muted">No ministry agency linked to this response.</p>
+    {% endif %}
+</div>
+{% endblock %}

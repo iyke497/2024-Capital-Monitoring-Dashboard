@@ -1,0 +1,56 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <p>Overview of the budget tracking system</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <h4>Ministry Agencies</h4>
+        <div class="value">{{ stats.ministry_agencies }}</div>
+    </div>
+    
+    <div class="stat-card">
+        <h4>Budget Projects</h4>
+        <div class="value">{{ stats.budget_projects }}</div>
+    </div>
+    
+    <div class="stat-card">
+        <h4>Survey Responses</h4>
+        <div class="value">{{ stats.survey_responses }}</div>
+    </div>
+    
+    <div class="stat-card">
+        <h4>Total Appropriation</h4>
+        <div class="value">₦{{ "{:,.0f}".format(stats.total_appropriation) }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Quick Actions</h3>
+    <div class="actions" style="gap: 15px;">
+        <a href="{{ url_for('admin.ministry_agency_create') }}" class="btn btn-primary">
+            Add Ministry Agency
+        </a>
+        <a href="{{ url_for('admin.budget_project_create') }}" class="btn btn-success">
+            Add Budget Project
+        </a>
+        <a href="{{ url_for('admin.ministry_agencies_list') }}" class="btn btn-secondary">
+            View All Agencies
+        </a>
+        <a href="{{ url_for('admin.survey_responses_list') }}" class="btn btn-secondary">
+            View Survey Responses
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <h3>System Information</h3>
+    <p><strong>Survey Response Editing:</strong> {% if allow_edit|default(false) %}Enabled{% else %}Disabled{% endif %}</p>
+    <p class="text-muted">To enable survey response editing, set ALLOW_SURVEY_EDIT = True in admin routes</p>
+</div>
+{% endblock %}

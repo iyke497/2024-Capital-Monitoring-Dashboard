@@ -1,0 +1,135 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}{% if budget_project %}Edit{% else %}Create{% endif %} Budget Project{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{% if budget_project %}Edit{% else %}Create New{% endif %} Budget Project</h1>
+    <p>{% if budget_project %}Update the project details{% else %}Add a new budget project to the system{% endif %}</p>
+</div>
+
+<div class="card">
+    <form method="POST">
+        <div class="form-group">
+            <label for="code">Project Code *</label>
+            <input type="text" 
+                   id="code" 
+                   name="code" 
+                   value="{{ budget_project.code if budget_project else '' }}" 
+                   required
+                   placeholder="e.g., M01A001P0001">
+        </div>
+        
+        <div class="form-group">
+            <label for="project_name">Project Name *</label>
+            <textarea id="project_name" 
+                      name="project_name" 
+                      required
+                      rows="3">{{ budget_project.project_name if budget_project else '' }}</textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="ministry">Ministry</label>
+            <input type="text" 
+                   id="ministry" 
+                   name="ministry" 
+                   value="{{ budget_project.ministry if budget_project else '' }}"
+                   list="ministry-list"
+                   placeholder="Select or type ministry name">
+            <datalist id="ministry-list">
+                {% for ma in ministry_agencies %}
+                    <option value="{{ ma.ministry_name }}">
+                {% endfor %}
+            </datalist>
+        </div>
+        
+        <div class="form-group">
+            <label for="agency">Agency</label>
+            <input type="text" 
+                   id="agency" 
+                   name="agency" 
+                   value="{{ budget_project.agency if budget_project else '' }}"
+                   list="agency-list"
+                   placeholder="Select or type agency name">
+            <datalist id="agency-list">
+                {% for ma in ministry_agencies %}
+                    <option value="{{ ma.agency_name }}">
+                {% endfor %}
+            </datalist>
+        </div>
+        
+        <div class="form-group">
+            <label for="ministry_code">Ministry Code</label>
+            <input type="text" 
+                   id="ministry_code" 
+                   name="ministry_code" 
+                   value="{{ budget_project.ministry_code if budget_project else '' }}"
+                   maxlength="12"
+                   placeholder="e.g., M01">
+        </div>
+        
+        <div class="form-group">
+            <label for="agency_code">Agency Code</label>
+            <input type="text" 
+                   id="agency_code" 
+                   name="agency_code" 
+                   value="{{ budget_project.agency_code if budget_project else '' }}"
+                   maxlength="12"
+                   placeholder="e.g., M01A001">
+        </div>
+        
+        <div class="form-group">
+            <label for="status_type">Status Type</label>
+            <select id="status_type" name="status_type">
+                <option value="">-</option>
+                <option value="Ongoing" {% if budget_project and budget_project.status_type == 'Ongoing' %}selected{% endif %}>Ongoing</option>
+                <option value="New" {% if budget_project and budget_project.status_type == 'New' %}selected{% endif %}>New</option>
+                <option value="Completed" {% if budget_project and budget_project.status_type == 'Completed' %}selected{% endif %}>Completed</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="appropriation">Appropriation Amount (₦)</label>
+            <input type="number" 
+                   id="appropriation" 
+                   name="appropriation" 
+                   step="0.01"
+                   value="{{ budget_project.appropriation if budget_project else '' }}"
+                   placeholder="0.00">
+        </div>
+        
+        <div class="actions" style="gap: 10px; margin-top: 30px;">
+            <button type="submit" class="btn btn-success">
+                {% if budget_project %}Update{% else %}Create{% endif %} Project
+            </button>
+            <a href="{{ url_for('admin.budget_projects_list') }}" class="btn btn-secondary">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+{% if budget_project %}
+<div class="card">
+    <h3>Additional Information</h3>
+    <p><strong>ID:</strong> {{ budget_project.id }}</p>
+    <p><strong>Created:</strong> {{ budget_project.created_at.strftime('%Y-%m-%d %H:%M') if budget_project.created_at else 'N/A' }}</p>
+    <p><strong>Updated:</strong> {{ budget_project.updated_at.strftime('%Y-%m-%d %H:%M') if budget_project.updated_at else 'N/A' }}</p>
+</div>
+{% endif %}
+
+<script>
+// Auto-fill codes when ministry/agency is selected
+document.getElementById('agency').addEventListener('change', function() {
+    const agencyName = this.value;
+    const ministryAgencies = {{ ministry_agencies | tojson }};
+    
+    const match = ministryAgencies.find(ma => ma.agency_name === agencyName);
+    if (match) {
+        document.getElementById('ministry').value = match.ministry_name;
+        document.getElementById('ministry_code').value = match.ministry_code;
+        document.getElementById('agency_code').value = match.agency_code;
+    }
+});
+</script>
+{% endblock %}

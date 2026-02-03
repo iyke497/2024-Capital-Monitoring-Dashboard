@@ -1,0 +1,118 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}{% if ministry_agency %}Edit{% else %}Create{% endif %} Ministry Agency{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{% if ministry_agency %}Edit{% else %}Create New{% endif %} Ministry Agency</h1>
+    <p>{% if ministry_agency %}Update the agency details{% else %}Add a new ministry agency to the system{% endif %}</p>
+</div>
+
+<div class="card">
+    <form method="POST">
+        <div class="form-group">
+            <label for="ministry_code">Ministry Code *</label>
+            <input type="text" 
+                   id="ministry_code" 
+                   name="ministry_code" 
+                   value="{{ ministry_agency.ministry_code if ministry_agency else '' }}" 
+                   required
+                   maxlength="12"
+                   placeholder="e.g., M01">
+        </div>
+        
+        <div class="form-group">
+            <label for="agency_code">Agency Code *</label>
+            <input type="text" 
+                   id="agency_code" 
+                   name="agency_code" 
+                   value="{{ ministry_agency.agency_code if ministry_agency else '' }}" 
+                   required
+                   maxlength="12"
+                   placeholder="e.g., M01A001">
+        </div>
+        
+        <div class="form-group">
+            <label for="ministry_name">Ministry Name *</label>
+            <input type="text" 
+                   id="ministry_name" 
+                   name="ministry_name" 
+                   value="{{ ministry_agency.ministry_name if ministry_agency else '' }}" 
+                   required
+                   maxlength="300"
+                   placeholder="e.g., Federal Ministry of Finance">
+        </div>
+        
+        <div class="form-group">
+            <label for="agency_name">Agency Name *</label>
+            <input type="text" 
+                   id="agency_name" 
+                   name="agency_name" 
+                   value="{{ ministry_agency.agency_name if ministry_agency else '' }}" 
+                   required
+                   maxlength="300"
+                   placeholder="e.g., Budget Office of the Federation">
+        </div>
+        
+        <div class="form-group">
+            <label for="fiscal_year">Fiscal Year</label>
+            <input type="text" 
+                   id="fiscal_year" 
+                   name="fiscal_year" 
+                   value="{{ ministry_agency.fiscal_year if ministry_agency else '2024' }}" 
+                   maxlength="4"
+                   placeholder="2024">
+        </div>
+        
+        <div class="form-group">
+            <input type="checkbox" 
+                   id="is_self_accounting" 
+                   name="is_self_accounting"
+                   {% if ministry_agency and ministry_agency.is_self_accounting %}checked{% endif %}>
+            <label for="is_self_accounting" class="checkbox-label">
+                Is Self-Accounting (Agency is also a Ministry)
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <input type="checkbox" 
+                   id="is_parastatal" 
+                   name="is_parastatal"
+                   {% if ministry_agency and ministry_agency.is_parastatal %}checked{% endif %}>
+            <label for="is_parastatal" class="checkbox-label">
+                Is Parastatal
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <input type="checkbox" 
+                   id="is_active" 
+                   name="is_active"
+                   {% if not ministry_agency or ministry_agency.is_active %}checked{% endif %}>
+            <label for="is_active" class="checkbox-label">
+                Active
+            </label>
+        </div>
+        
+        <div class="actions" style="gap: 10px; margin-top: 30px;">
+            <button type="submit" class="btn btn-success">
+                {% if ministry_agency %}Update{% else %}Create{% endif %} Agency
+            </button>
+            <a href="{{ url_for('admin.ministry_agencies_list') }}" class="btn btn-secondary">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+{% if ministry_agency %}
+<div class="card">
+    <h3>Additional Information</h3>
+    <p><strong>ID:</strong> {{ ministry_agency.id }}</p>
+    <p><strong>Created:</strong> {{ ministry_agency.created_at.strftime('%Y-%m-%d %H:%M') if ministry_agency.created_at else 'N/A' }}</p>
+    <p><strong>Updated:</strong> {{ ministry_agency.updated_at.strftime('%Y-%m-%d %H:%M') if ministry_agency.updated_at else 'N/A' }}</p>
+    <p><strong>Normalized Agency Name:</strong> {{ ministry_agency.agency_name_normalized }}</p>
+    <p><strong>Normalized Ministry Name:</strong> {{ ministry_agency.ministry_name_normalized }}</p>
+</div>
+{% endif %}
+{% endblock %}

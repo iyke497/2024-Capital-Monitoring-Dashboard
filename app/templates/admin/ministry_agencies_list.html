@@ -1,0 +1,136 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Ministry Agencies{% endblock %}
+
+{% block content %}
+<div class="page-header flex-between">
+    <div>
+        <h1>Ministry Agencies</h1>
+        <p>Manage ministry and agency records</p>
+    </div>
+    <a href="{{ url_for('admin.ministry_agency_create') }}" class="btn btn-primary">
+        Add New Agency
+    </a>
+</div>
+
+<div class="card">
+    <form method="GET" action="{{ url_for('admin.ministry_agencies_list') }}">
+        <div class="filters">
+            <input type="text" 
+                   name="search" 
+                   placeholder="Search by name or code..." 
+                   value="{{ search }}">
+            
+            <select name="ministry">
+                <option value="">All Ministries</option>
+                {% for ministry_code, ministry_name in ministries %}
+                    <option value="{{ ministry_code }}" {% if ministry_filter == ministry_code %}selected{% endif %}>
+                        {{ ministry_name }}
+                    </option>
+                {% endfor %}
+            </select>
+            
+            <button type="submit" class="btn btn-primary">Filter</button>
+            
+            {% if search or ministry_filter %}
+                <a href="{{ url_for('admin.ministry_agencies_list') }}" class="btn btn-secondary">Clear</a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Ministry Code</th>
+                    <th>Agency Code</th>
+                    <th>Agency Name</th>
+                    <th>Ministry Name</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ma in pagination.items %}
+                <tr>
+                    <td>{{ ma.ministry_code }}</td>
+                    <td>{{ ma.agency_code }}</td>
+                    <td>
+                        {{ ma.agency_name }}
+                        {% if ma.is_self_accounting %}
+                            <span class="text-muted" style="font-size: 11px;">(Self-accounting)</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ ma.ministry_name }}</td>
+                    <td>
+                        {% if ma.is_active %}
+                            <span style="color: #27ae60;">Active</span>
+                        {% else %}
+                            <span style="color: #e74c3c;">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="actions">
+                            <a href="{{ url_for('admin.ministry_agency_edit', id=ma.id) }}" 
+                               class="btn btn-primary btn-sm">Edit</a>
+                            <form method="POST" 
+                                  action="{{ url_for('admin.ministry_agency_delete', id=ma.id) }}"
+                                  onsubmit="return confirm('Are you sure you want to delete this agency?');"
+                                  style="display: inline;">
+                                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 40px;">
+                        No ministry agencies found.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if pagination.pages > 1 %}
+    <div class="pagination">
+        {% if pagination.has_prev %}
+            <a href="{{ url_for('admin.ministry_agencies_list', page=pagination.prev_num, search=search, ministry=ministry_filter) }}">
+                Previous
+            </a>
+        {% else %}
+            <span class="disabled">Previous</span>
+        {% endif %}
+        
+        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if page_num %}
+                {% if page_num == pagination.page %}
+                    <span class="active">{{ page_num }}</span>
+                {% else %}
+                    <a href="{{ url_for('admin.ministry_agencies_list', page=page_num, search=search, ministry=ministry_filter) }}">
+                        {{ page_num }}
+                    </a>
+                {% endif %}
+            {% else %}
+                <span>...</span>
+            {% endif %}
+        {% endfor %}
+        
+        {% if pagination.has_next %}
+            <a href="{{ url_for('admin.ministry_agencies_list', page=pagination.next_num, search=search, ministry=ministry_filter) }}">
+                Next
+            </a>
+        {% else %}
+            <span class="disabled">Next</span>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <p class="text-muted" style="margin-top: 15px;">
+        Showing {{ pagination.items|length }} of {{ pagination.total }} records
+    </p>
+</div>
+{% endblock %}
