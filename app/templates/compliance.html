@@ -8,55 +8,63 @@
 {% endblock %}
 
 {% block content %}
-    <!-- Tab Navigation -->
+    <!-- Pills Navigation (matching base style) -->
     <div class="row">
         <div class="twelve columns">
-            <ul class="tab-nav">
-                <li><a href="#" class="button tab-link active" onclick="showTab('mda-tab')">MDA Level</a></li>
-                <li><a href="#" class="button tab-link" onclick="showTab('ministry-tab')">Ministry Level</a></li>
-            </ul>
+            <div class="pills-nav">
+                <button class="pill-btn active" onclick="showTab('mda-tab')">MDA LEVEL</button>
+                <button class="pill-btn" onclick="showTab('ministry-tab')">MINISTRY LEVEL</button>
+            </div>
         </div>
     </div>
 
     <!-- MDA Tab -->
-    <div id="mda-tab" class="tab-content">
-        <h3 id="mda-title">Project Compliance per MDA</h3>
-        <table id="mda-table" class="display" style="width:100%">
-            <thead>
-                <tr>
-                    <th>MDA Name</th>
-                    <th>Parent Ministry</th>
-                    <th>Expected (Budget 2024)</th>
-                    <th>Reported (Survey)</th>
-                    <th>Total Submissions</th>
-                    <th>Compliance Rate (%)</th>
-                </tr>
-            </thead>
-        </table>
+    <div id="mda-tab" class="tab-pane active">
+        <div class="card">
+            <h3>Project Compliance per MDA</h3>
+            <div class="table-container">
+                <table id="mda-table" class="display" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th>MDA Name</th>
+                            <th>Parent Ministry</th>
+                            <th>Expected (Budget 2024)</th>
+                            <th>Reported (Survey)</th>
+                            <th>Total Submissions</th>
+                            <th>Compliance Rate (%)</th>
+                        </tr>
+                    </thead>
+                </table>
+            </div>
+        </div>
     </div>
 
     <!-- Ministry Tab -->
-    <div id="ministry-tab" class="tab-content" style="display:none;">
-        <h3>Ministry Summary Info</h3>
-        <table id="ministry-table" class="display" style="width:100%">
-            <thead>
-                <tr>
-                    <th>Ministry Name</th>
-                    <th>Reporting MDAs</th>
-                    <th>Total Responses</th>
-                    <th>Total Appropriation (2024)</th>
-                    <th>Avg. Completion (%)</th>
-                </tr>
-            </thead>
-        </table>
+    <div id="ministry-tab" class="tab-pane">
+        <div class="card">
+            <h3>Ministry Summary</h3>
+            <div class="table-container">
+                <table id="ministry-table" class="display" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th>Ministry Name</th>
+                            <th>Reporting MDAs</th>
+                            <th>Total Responses</th>
+                            <th>Total Appropriation (2024)</th>
+                            <th>Avg. Completion (%)</th>
+                        </tr>
+                    </thead>
+                </table>
+            </div>
+        </div>
     </div>
 
     <!-- Project Details Modal -->
     <div id="project-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h4 id="modal-title">MDA Project Details</h4>
-                <span class="close-modal">&times;</span>
+                <h3 id="modal-title">MDA Project Details</h3>
+                <span class="close">&times;</span>
             </div>
             <div class="modal-body">
                 <div id="modal-summary" style="margin-bottom: 20px;">
@@ -81,8 +89,8 @@
                     </table>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="button button-primary" onclick="closeModal()">Close</button>
+            <div class="form-actions">
+                <button class="btn btn-primary" onclick="closeModal()">Close</button>
             </div>
         </div>
     </div>

@@ -1,15 +1,17 @@
-# app/analytics.py
+ # app/analytics.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+from difflib import SequenceMatcher  # ADD THIS
+from collections import defaultdict  # ADD THIS
 
-from sqlalchemy import func, distinct, case, literal, and_
+from sqlalchemy import func, distinct, case, literal, and_, or_
 from sqlalchemy.orm import Session
 
 from .database import db
-from .models import SurveyResponse, BudgetProject2024
+from .models import SurveyResponse, BudgetProject2024, MinistryAgency
 from .data_cleaner import DataCleaner
 
 
@@ -45,6 +47,180 @@ def _safe_float(x: Any) -> float:
         return float(x or 0.0)
     except Exception:
         return 0.0
+
+# ========================================
+# ADD THESE NEW CLASSES AFTER HELPERS
+# ========================================
+
+class AgencyConsolidationRules:
+    """
+    Rules for consolidating Ministry HQs with their parent ministry
+    and handling agency name changes
+    """
+    
+    # Ministry HQ variations that should be consolidated to parent ministry
+    MINISTRY_HQ_CONSOLIDATION = {
+        '255001001': '255001001',  # Federal Ministry of Tourism
+        '451001001': '451001001',  # Federal Ministry of Regional Development
+        '521001001': '521001001',  # Federal Ministry of Health
+    }
+    
+    # Historical name changes
+    AGENCY_NAME_CHANGES = {
+        '451001001': (
+            'FEDERAL MINISTRY OF NIGER DELTA DEVELOPMENT',
+            'FEDERAL MINISTRY OF REGIONAL DEVELOPMENT',
+            '2024-01-01'
+        ),
+    }
+    
+    # Suffix variations that should be stripped for matching
+    HQ_SUFFIXES = [
+        '- HQTRS', '- HQ', 'HQTRS', 'HQ', 'HEADQUARTERS', '- HEADQUARTERS',
+    ]
+    
+    @classmethod
+    def get_canonical_agency_code(cls, agency_code: str) -> str:
+        """Get the canonical agency code (after consolidation)"""
+        return cls.MINISTRY_HQ_CONSOLIDATION.get(agency_code, agency_code)
+    
+    @classmethod
+    def get_current_name(cls, agency_code: str) -> Optional[str]:
+        """Get the current name for an agency (handles name changes)"""
+        if agency_code in cls.AGENCY_NAME_CHANGES:
+            return cls.AGENCY_NAME_CHANGES[agency_code][1]
+        return None
+    
+    @classmethod
+    def normalize_ministry_name(cls, name: str) -> str:
+        """Normalize ministry name by removing HQ suffixes"""
+        if not name:
+            return ""
+        
+        normalized = name.upper().strip()
+        
+        # Remove HQ suffixes
+        for suffix in cls.HQ_SUFFIXES:
+            if normalized.endswith(suffix):
+                normalized = normalized[:-len(suffix)].strip()
+        
+        normalized = normalized.replace('&', ' AND ')
+        normalized = ' '.join(normalized.split())
+        
+        return normalized
+    
+    @classmethod
+    def is_ministry_hq(cls, agency_name: str, agency_code: str = None) -> bool:
+        """Check if this is a ministry HQ"""
+        if agency_code and agency_code in cls.MINISTRY_HQ_CONSOLIDATION:
+            return True
+        
+        name_upper = agency_name.upper()
+        for suffix in cls.HQ_SUFFIXES:
+            if suffix in name_upper:
+                return True
+        
+        return False
+
+
+class ImprovedMinistryAgency:
+    """Enhanced MinistryAgency operations with consolidation support"""
+    
+    @staticmethod
+    def find_agency_by_name_improved(name: str, threshold: float = 0.90) -> Optional[MinistryAgency]:
+        """Enhanced fuzzy matching with 90% threshold"""
+        if not name:
+            return None
+        
+        normalized_search = AgencyConsolidationRules.normalize_ministry_name(name)
+        
+        # Try exact match
+        exact_match = MinistryAgency.query.filter(
+            func.upper(MinistryAgency.agency_name_normalized) == normalized_search,
+            MinistryAgency.is_active == True
+        ).first()
+        
+        if exact_match:
+            return exact_match
+        
+        # Fuzzy match
+        all_agencies = MinistryAgency.query.filter(
+            MinistryAgency.is_active == True
+        ).all()
+        
+        best_match = None
+        best_score = threshold
+        
+        for agency in all_agencies:
+            agency_normalized = AgencyConsolidationRules.normalize_ministry_name(
+                agency.agency_name
+            )
+            
+            score = SequenceMatcher(
+                None, 
+                normalized_search, 
+                agency_normalized
+            ).ratio()
+            
+            if score > best_score:
+                best_score = score
+                best_match = agency
+        
+        return best_match
+    
+    @staticmethod
+    def link_survey_responses(force_relink: bool = False) -> Dict[str, Any]:
+        """Link survey responses to MinistryAgency"""
+        if force_relink:
+            unlinked = SurveyResponse.query.filter(
+                SurveyResponse.mda_name.isnot(None),
+                SurveyResponse.mda_name != ''
+            ).all()
+        else:
+            unlinked = SurveyResponse.query.filter(
+                SurveyResponse.ministry_agency_id.is_(None),
+                SurveyResponse.mda_name.isnot(None),
+                SurveyResponse.mda_name != ''
+            ).all()
+        
+        linked_count = 0
+        fuzzy_matched = 0
+        unmatched = []
+        
+        for response in unlinked:
+            agency = ImprovedMinistryAgency.find_agency_by_name_improved(
+                response.mda_name, 
+                threshold=0.90
+            )
+            
+            if agency:
+                response.ministry_agency_id = agency.id
+                
+                normalized_response = AgencyConsolidationRules.normalize_ministry_name(
+                    response.mda_name
+                )
+                normalized_agency = AgencyConsolidationRules.normalize_ministry_name(
+                    agency.agency_name
+                )
+                
+                if normalized_response == normalized_agency:
+                    linked_count += 1
+                else:
+                    fuzzy_matched += 1
+            else:
+                unmatched.append({
+                    'mda_name': response.mda_name,
+                    'ergp_code': response.ergp_code
+                })
+        
+        db.session.commit()
+        
+        return {
+            'linked': linked_count,
+            'fuzzy': fuzzy_matched,
+            'unmatched': len(unmatched),
+            'unmatched_details': unmatched
+        }
 
 
 # -------------------------
@@ -146,14 +322,14 @@ class ActivityAnalytics(AnalyticsBase):
         
         rows = (
             self.session.query(
-                func.date(SurveyResponse.created_at).label("response_date"),
+                func.date(SurveyResponse.updated).label("response_date"),
                 func.count(SurveyResponse.id).label("total_responses"),
                 func.sum(case((SurveyResponse.survey_type == "survey1", 1), else_=0)).label("survey1_count"),
                 func.sum(case((SurveyResponse.survey_type == "survey2", 1), else_=0)).label("survey2_count"),
             )
-            .filter(SurveyResponse.created_at >= thirty_days_ago)
-            .group_by(func.date(SurveyResponse.created_at))
-            .order_by(func.date(SurveyResponse.created_at))
+            .filter(SurveyResponse.updated >= thirty_days_ago)
+            .group_by(func.date(SurveyResponse.updated))
+            .order_by(func.date(SurveyResponse.updated))
             .all()
         )
         
@@ -197,14 +373,14 @@ class ActivityAnalytics(AnalyticsBase):
         
         rows = (
             self.session.query(
-                func.date(SurveyResponse.created_at).label("response_date"),
+                func.date(SurveyResponse.updated).label("response_date"),
                 func.count(SurveyResponse.id).label("total_responses"),
                 func.sum(case((SurveyResponse.survey_type == "survey1", 1), else_=0)).label("survey1_count"),
                 func.sum(case((SurveyResponse.survey_type == "survey2", 1), else_=0)).label("survey2_count"),
             )
-            .filter(SurveyResponse.created_at >= seven_days_ago)
-            .group_by(func.date(SurveyResponse.created_at))
-            .order_by(func.date(SurveyResponse.created_at))
+            .filter(SurveyResponse.updated >= seven_days_ago)
+            .group_by(func.date(SurveyResponse.updated))
+            .order_by(func.date(SurveyResponse.updated))
             .all()
         )
         
@@ -362,164 +538,336 @@ class QualityAnalytics(AnalyticsBase):
 # -------------------------
 
 class PerformanceAnalytics(AnalyticsBase):
-    def _expected_projects_by_mda_subquery(self):
-        return (
-            self.session.query(
-                BudgetProject2024.agency_normalized.label("mda_name"),
-                func.count(distinct(BudgetProject2024.code)).label("expected_projects"),
+    """
+    Unified compliance and performance analytics using agency codes.
+    This replaces the old ComplianceMetrics in data_fetcher.py
+    """
+    
+    def calculate_mda_compliance_data(self) -> List[Dict[str, Any]]:
+        """
+        Calculate MDA compliance with Ministry HQ consolidation.
+        This is the primary compliance calculation method.
+        """
+        # STEP 1: Get budget counts by canonical agency_code
+        budget_by_agency_raw = self.session.query(
+            BudgetProject2024.agency_code,
+            BudgetProject2024.code
+        ).filter(
+            BudgetProject2024.agency_code.isnot(None),
+            BudgetProject2024.agency_code != ''
+        ).distinct().all()
+        
+        # Group by canonical agency code (consolidating HQs)
+        canonical_budget_counts = defaultdict(set)
+        
+        for agency_code, ergp_code in budget_by_agency_raw:
+            canonical_code = AgencyConsolidationRules.get_canonical_agency_code(agency_code)
+            canonical_budget_counts[canonical_code].add(ergp_code)
+        
+        budget_lookup = {
+            code: len(ergp_codes) 
+            for code, ergp_codes in canonical_budget_counts.items()
+        }
+        
+        # STEP 2: Get survey data grouped by canonical agency
+        survey_data_raw = self.session.query(
+            MinistryAgency.agency_code,
+            MinistryAgency.agency_name,
+            MinistryAgency.ministry_name,
+            SurveyResponse.ergp_code,
+            SurveyResponse.id
+        ).join(
+            SurveyResponse,
+            SurveyResponse.ministry_agency_id == MinistryAgency.id
+        ).filter(
+            MinistryAgency.is_active == True
+        ).all()
+        
+        # Group by canonical agency code
+        canonical_survey_data = defaultdict(lambda: {
+            'reported_ergp': set(),
+            'total_submissions': 0,
+            'agency_name': None,
+            'ministry_name': None
+        })
+        
+        for agency_code, agency_name, ministry_name, ergp_code, response_id in survey_data_raw:
+            canonical_code = AgencyConsolidationRules.get_canonical_agency_code(agency_code)
+            
+            if ergp_code:
+                canonical_survey_data[canonical_code]['reported_ergp'].add(ergp_code)
+            
+            canonical_survey_data[canonical_code]['total_submissions'] += 1
+            
+            if not canonical_survey_data[canonical_code]['agency_name']:
+                current_name = AgencyConsolidationRules.get_current_name(canonical_code)
+                canonical_survey_data[canonical_code]['agency_name'] = (
+                    current_name or agency_name
+                )
+                canonical_survey_data[canonical_code]['ministry_name'] = ministry_name
+        
+        # STEP 3: Combine and calculate compliance
+        compliance_data = []
+        all_canonical_codes = set(budget_lookup.keys()) | set(canonical_survey_data.keys())
+        
+        for canonical_code in all_canonical_codes:
+            agency = MinistryAgency.query.filter_by(
+                agency_code=canonical_code,
+                is_active=True
+            ).first()
+            
+            if not agency:
+                continue
+            
+            expected = budget_lookup.get(canonical_code, 0)
+            
+            survey_info = canonical_survey_data.get(canonical_code, {
+                'reported_ergp': set(),
+                'total_submissions': 0,
+                'agency_name': agency.agency_name,
+                'ministry_name': agency.ministry_name
+            })
+            
+            reported = len(survey_info['reported_ergp'])
+            total_subs = survey_info['total_submissions']
+            
+            display_name = (
+                AgencyConsolidationRules.get_current_name(canonical_code) or 
+                agency.agency_name
             )
-            .group_by(BudgetProject2024.agency_normalized)
-            .subquery()
-        )
-
-    def _reported_projects_by_mda_subquery(self):
-        # NOTE: group by mda_name only to avoid splitting due to inconsistent parent_ministry
-        return (
-            self.session.query(
-                SurveyResponse.mda_name.label("mda_name"),
-                func.max(SurveyResponse.parent_ministry).label("parent_ministry"),
-                func.count(distinct(SurveyResponse.ergp_code)).label("reported_projects"),
-                func.count(SurveyResponse.id).label("total_responses"),
-                func.avg(func.coalesce(SurveyResponse.percentage_completed, 0)).label("avg_completion_pct"),
-                func.sum(case((SurveyResponse.has_submitted_report == True, 1), else_=0)).label("submitted_count"),
-                func.max(SurveyResponse.created_at).label("latest_response_at"),
-                func.sum(case((_non_empty_text(SurveyResponse.project_pictures), 1), else_=0)).label("with_pictures"),
-                func.sum(case((_non_empty_text(SurveyResponse.geolocations), 1), else_=0)).label("with_geo"),
-                func.sum(case((_non_empty_text(SurveyResponse.other_documents), 1), else_=0)).label("with_docs"),
-            )
-            .group_by(SurveyResponse.mda_name)
-            .subquery()
-        )
-
+            
+            compliance_rate = 0.0
+            if expected > 0:
+                compliance_rate = min(100.0, (reported / expected) * 100)
+            
+            compliance_data.append({
+                'mda_name': display_name,
+                'agency_code': canonical_code,
+                'parent_ministry': agency.ministry_name,
+                'expected_projects': expected,
+                'reported_projects': reported,
+                'total_submissions': total_subs,
+                'compliance_rate_pct': round(compliance_rate, 2),
+                'avg_submissions_per_project': round(total_subs / reported, 1) if reported > 0 else 0,
+                'has_budget': expected > 0,
+                'has_survey': reported > 0 or total_subs > 0,
+                'is_ministry_hq': AgencyConsolidationRules.is_ministry_hq(
+                    display_name, canonical_code
+                )
+            })
+        
+        compliance_data.sort(key=lambda x: (x['parent_ministry'], x['mda_name']))
+        
+        return compliance_data
+    
+    def calculate_ministry_compliance_data(self) -> List[Dict[str, Any]]:
+        """Calculate ministry-level compliance (aggregated from MDA level)"""
+        mda_data = self.calculate_mda_compliance_data()
+        
+        ministry_stats = defaultdict(lambda: {
+            'expected': 0,
+            'reported': 0,
+            'total_submissions': 0,
+            'mda_count': 0,
+            'mdas': []
+        })
+        
+        for mda in mda_data:
+            ministry = mda['parent_ministry']
+            ministry_stats[ministry]['expected'] += mda['expected_projects']
+            ministry_stats[ministry]['reported'] += mda['reported_projects']
+            ministry_stats[ministry]['total_submissions'] += mda['total_submissions']
+            ministry_stats[ministry]['mda_count'] += 1
+            ministry_stats[ministry]['mdas'].append(mda['mda_name'])
+        
+        ministry_data = []
+        for ministry, stats in ministry_stats.items():
+            compliance_rate = 0.0
+            if stats['expected'] > 0:
+                compliance_rate = (stats['reported'] / stats['expected']) * 100
+            
+            ministry_data.append({
+                'ministry_name': ministry,
+                'mda_count': stats['mda_count'],
+                'expected_projects': stats['expected'],
+                'reported_projects': stats['reported'],
+                'total_responses': stats['total_submissions'],
+                'avg_completion': round(compliance_rate, 2),
+                'total_budget': 0  # TODO: Sum budgets if needed
+            })
+        
+        return sorted(ministry_data, key=lambda x: x['ministry_name'])
+    
+    def get_mda_project_details(self, agency_code: str) -> List[Dict[str, Any]]:
+        """Get detailed project list for a specific MDA"""
+        canonical_code = AgencyConsolidationRules.get_canonical_agency_code(agency_code)
+        
+        agency = MinistryAgency.query.filter_by(
+            agency_code=canonical_code,
+            is_active=True
+        ).first()
+        
+        if not agency:
+            return []
+        
+        # Get budget projects
+        budget_projects = BudgetProject2024.query.filter_by(
+            agency_code=canonical_code
+        ).all()
+        
+        # Get survey responses
+        survey_responses = self.session.query(
+            SurveyResponse
+        ).join(
+            MinistryAgency,
+            SurveyResponse.ministry_agency_id == MinistryAgency.id
+        ).filter(
+            MinistryAgency.agency_code == canonical_code
+        ).all()
+        
+        reported_ergp = {resp.ergp_code: resp for resp in survey_responses if resp.ergp_code}
+        
+        project_details = []
+        
+        for budget_proj in budget_projects:
+            reported_response = reported_ergp.get(budget_proj.code)
+            
+            project_details.append({
+                'project_code': budget_proj.code,
+                'project_title': budget_proj.project_name,
+                'budget_allocation': float(budget_proj.appropriation) if budget_proj.appropriation else 0,
+                'reported': reported_response is not None,
+                'submission_id': reported_response.public_id if reported_response else None,
+                'amount_released': float(reported_response.amount_released_2024) if reported_response and reported_response.amount_released_2024 else 0,
+                'amount_utilized': float(reported_response.amount_utilized_2024) if reported_response and reported_response.amount_utilized_2024 else 0,
+                'project_status': reported_response.project_status if reported_response else None
+            })
+        
+        return project_details
+    
     def mda_performance_table(self) -> List[Dict[str, Any]]:
         """
-        Returns one row per MDA with:
-        - compliance rate proxy (reported/expected)
-        - submission_rate, avg_completion
-        - evidence proxy
-        - recency (days since last response)
-        - composite score (simple MVP)
+        Enhanced performance table that uses the new compliance calculation.
+        This replaces the old method that used string matching.
         """
-        expected = self._expected_projects_by_mda_subquery()
-        reported = self._reported_projects_by_mda_subquery()
-
-        # LEFT JOIN from expected -> reported (budget mdas). This drops survey-only MDAs.
-        # If you want FULL OUTER JOIN in SQLite, we can apply the union strategy later.
-        rows = (
-            self.session.query(
-                func.coalesce(expected.c.mda_name, reported.c.mda_name).label("mda_name"),
-                reported.c.parent_ministry.label("parent_ministry"),
-                func.coalesce(expected.c.expected_projects, 0).label("expected"),
-                func.coalesce(reported.c.reported_projects, 0).label("reported"),
-                func.coalesce(reported.c.total_responses, 0).label("total_responses"),
-                func.coalesce(reported.c.avg_completion_pct, 0).label("avg_completion_pct"),
-                func.coalesce(reported.c.submitted_count, 0).label("submitted_count"),
-                reported.c.latest_response_at.label("latest_response_at"),
-                func.coalesce(reported.c.with_pictures, 0).label("with_pictures"),
-                func.coalesce(reported.c.with_geo, 0).label("with_geo"),
-                func.coalesce(reported.c.with_docs, 0).label("with_docs"),
+        # Get compliance data (already calculates expected/reported correctly)
+        compliance_data = self.calculate_mda_compliance_data()
+        
+        # Now enhance with additional performance metrics
+        performance_data = []
+        
+        for mda in compliance_data:
+            agency_code = mda['agency_code']
+            
+            # Get additional metrics for this MDA
+            agency = MinistryAgency.query.filter_by(agency_code=agency_code).first()
+            
+            if not agency:
+                continue
+            
+            # Get survey responses for performance metrics
+            responses = SurveyResponse.query.filter_by(
+                ministry_agency_id=agency.id
+            ).all()
+            
+            total_responses = len(responses)
+            submitted_count = sum(1 for r in responses if r.has_submitted_report)
+            
+            completion_scores = [
+                float(r.percentage_completed) 
+                for r in responses 
+                if r.percentage_completed
+            ]
+            avg_completion_pct = (
+                sum(completion_scores) / len(completion_scores) 
+                if completion_scores else 0
             )
-            .outerjoin(reported, expected.c.mda_name == reported.c.mda_name)
-            .all()
-        )
-
-        out: List[Dict[str, Any]] = []
-        for r in rows:
-            mda_name = r.mda_name
-            parent_min = r.parent_ministry
-            if not parent_min:
-                _, parent_min = DataCleaner.map_mda_to_ministry(mda_name)
-
-            expected_n = _safe_int(r.expected)
-            reported_n = _safe_int(r.reported)
-            total_responses = _safe_int(r.total_responses)
-            submitted = _safe_int(r.submitted_count)
-
-            compliance_pct = (reported_n / expected_n) * 100 if expected_n > 0 else 0.0
-            submission_rate_pct = (submitted / total_responses) * 100 if total_responses > 0 else 0.0
-            avg_completion_pct = _safe_float(r.avg_completion_pct)
-
-            evidence_hits = _safe_int(r.with_pictures) + _safe_int(r.with_geo) + _safe_int(r.with_docs)
-            evidence_rate_proxy = (evidence_hits / total_responses) * 100 if total_responses > 0 else 0.0
-
-            # Recency score: 10 if within 3 days, 7 if within 7 days, 4 within 14 days, else 0
+            
+            # Evidence metrics
+            with_pictures = sum(1 for r in responses if r.project_pictures)
+            with_geo = sum(1 for r in responses if r.geolocations)
+            with_docs = sum(1 for r in responses if r.other_documents)
+            
+            evidence_hits = with_pictures + with_geo + with_docs
+            evidence_rate_proxy = (
+                (evidence_hits / total_responses) * 100 
+                if total_responses > 0 else 0
+            )
+            
+            # Recency
+            latest_response_at = max(
+                (r.created_at for r in responses if r.created_at),
+                default=None
+            )
+            
             days_since = None
             recency_score_10 = 0.0
-            if r.latest_response_at:
-                days_since = int((datetime.utcnow() - r.latest_response_at).total_seconds() // 86400)
+            if latest_response_at:
+                days_since = int((datetime.utcnow() - latest_response_at).total_seconds() // 86400)
                 if days_since <= 3:
                     recency_score_10 = 10.0
                 elif days_since <= 7:
                     recency_score_10 = 7.0
                 elif days_since <= 14:
                     recency_score_10 = 4.0
-                else:
-                    recency_score_10 = 0.0
-
-            # MVP composite (0-100): tune weights later
-            # 40% compliance + 20% submission + 20% completion + 10% evidence + 10% recency(0-10 scaled to 0-100)
-            composite = (
-                1.00 * compliance_pct
-                # + 0.20 * submission_rate_pct
-                # + 0.20 * avg_completion_pct
-                # + 0.10 * evidence_rate_proxy
-                # + 0.10 * (recency_score_10 * 10.0)
+            
+            # Submission rate
+            submission_rate_pct = (
+                (submitted_count / total_responses) * 100 
+                if total_responses > 0 else 0
             )
-
-            out.append(
-                {
-                    "parent_ministry": parent_min or "OTHER INDEPENDENT AGENCIES",
-                    "mda_name": mda_name,
-                    "expected_projects": expected_n,
-                    "reported_projects": reported_n,
-                    "total_responses": total_responses,
-                    "compliance_rate_pct": round(compliance_pct, 2),
-                    "submission_rate_pct": round(submission_rate_pct, 2),
-                    "avg_completion_pct": round(avg_completion_pct, 2),
-                    "evidence_rate_proxy_pct": round(evidence_rate_proxy, 2),
-                    "latest_response_at": r.latest_response_at.isoformat() if r.latest_response_at else None,
-                    "days_since_last_response": days_since,
-                    "performance_index": round(composite, 2),
-                }
-            )
-
-        return out
-
+            
+            # Performance index (compliance-weighted)
+            performance_index = mda['compliance_rate_pct']  # Start with compliance
+            
+            performance_data.append({
+                'parent_ministry': mda['parent_ministry'],
+                'mda_name': mda['mda_name'],
+                'agency_code': agency_code,
+                'expected_projects': mda['expected_projects'],
+                'reported_projects': mda['reported_projects'],
+                'total_responses': total_responses,
+                'compliance_rate_pct': mda['compliance_rate_pct'],
+                'submission_rate_pct': round(submission_rate_pct, 2),
+                'avg_completion_pct': round(avg_completion_pct, 2),
+                'evidence_rate_proxy_pct': round(evidence_rate_proxy, 2),
+                'latest_response_at': latest_response_at.isoformat() if latest_response_at else None,
+                'days_since_last_response': days_since,
+                'performance_index': round(performance_index, 2),
+            })
+        
+        return performance_data
+    
+    # Keep existing methods but update them to use new calculation
     def best_and_worst_within_ministry(
         self,
         parent_ministry: str,
         top_n: int = 10,
         min_expected_projects: int = 1,
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Returns best/worst agencies in a given ministry based on performance_index.
-        """
+        """Returns best/worst agencies in a ministry"""
         rows = [
             r for r in self.mda_performance_table()
             if (r.get("parent_ministry") or "").strip().lower() == parent_ministry.strip().lower()
             and _safe_int(r.get("expected_projects")) >= min_expected_projects
         ]
-
+        
         rows_sorted = sorted(rows, key=lambda x: _safe_float(x.get("performance_index")), reverse=True)
-
+        
         return {
             "best": rows_sorted[:top_n],
             "worst": list(reversed(rows_sorted[-top_n:])) if rows_sorted else [],
         }
-
+    
     def budget_reporting_overview(self) -> Dict[str, Any]:
-        """
-            Calculate overview of 2024 budget projects: how many have been reported vs not reported.
-            Returns counts and percentages for visualization.
-        """
-        
-        # Get total unique projects in 2024 budget
+        """Overall budget compliance summary"""
+        # Get total budget projects
         total_budget_projects = (
             self.session.query(func.count(distinct(BudgetProject2024.code)))
             .scalar() or 0
         )
         
-        # Get unique ERGP codes that have been reported in survey responses
+        # Get reported codes
         reported_codes = (
             self.session.query(distinct(SurveyResponse.ergp_code))
             .filter(SurveyResponse.ergp_code.isnot(None))
@@ -528,7 +876,7 @@ class PerformanceAnalytics(AnalyticsBase):
         )
         reported_codes_set = {code[0] for code in reported_codes if code[0]}
         
-        # Count how many budget projects have matching reports
+        # Count reported budget projects
         reported_budget_projects = (
             self.session.query(func.count(distinct(BudgetProject2024.code)))
             .filter(BudgetProject2024.code.in_(reported_codes_set))
@@ -553,21 +901,16 @@ class PerformanceAnalytics(AnalyticsBase):
 # -------------------------
 
 class AnalyticsService:
-    """
-    One place your routes can call to build dashboard payloads.
-    Keeps routes clean and makes unit testing easier.
-    """
-
+    """Facade for routes"""
+    
     def __init__(self, session: Optional[Session] = None):
         self.session = session or db.session
         self.activity = ActivityAnalytics(self.session)
         self.quality = QualityAnalytics(self.session)
         self.performance = PerformanceAnalytics(self.session)
-
+    
     def dashboard_overview(self) -> Dict[str, Any]:
-        """
-        A starter payload you can expand. Keep it fast.
-        """
+        """Dashboard payload"""
         return {
             "latest_responders": self.activity.latest_responding_agencies(limit=20),
             "activity_30d": self.activity.activity_summary_by_mda(window_days=30),
@@ -577,3 +920,16 @@ class AnalyticsService:
             "performance_table": self.performance.mda_performance_table(),
             "budget_reporting": self.performance.budget_reporting_overview(),
         }
+    
+    # ADD these new methods for compliance endpoints
+    def mda_compliance(self) -> List[Dict[str, Any]]:
+        """MDA-level compliance data"""
+        return self.performance.calculate_mda_compliance_data()
+    
+    def ministry_compliance(self) -> List[Dict[str, Any]]:
+        """Ministry-level compliance data"""
+        return self.performance.calculate_ministry_compliance_data()
+    
+    def mda_projects(self, agency_code: str) -> List[Dict[str, Any]]:
+        """Project details for specific MDA"""
+        return self.performance.get_mda_project_details(agency_code)

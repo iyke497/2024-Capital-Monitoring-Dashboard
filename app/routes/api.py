@@ -2,9 +2,9 @@
 from flask import Blueprint, jsonify, request, send_file, current_app
 from app import db
 from ..models import SurveyResponse, SurveyMetadata, MinistryAgency, BudgetProject2024
-from ..data_fetcher import DataFetcher, ComplianceMetrics
+from ..data_fetcher import DataFetcher
 from ..data_cleaner import DataCleaner
-from ..analytics import AnalyticsService
+from ..analytics import AnalyticsService, ImprovedMinistryAgency, AgencyConsolidationRules
 from ..scheduler import get_last_fetch_time, is_fetch_in_progress, get_next_run_time
 from app.export_service import ExportService
 from datetime import datetime
@@ -139,214 +139,84 @@ def get_responses():
 
 
 # Compliance and Metrics Endpoints
-@api_bp.get("/compliance/ministry")
-def get_ministry_compliance():
-    """Groups individual MDA responses into high-level Ministry buckets using MinistryAgency"""
-    try:        
-        # Get all ministries
-        ministries = MinistryAgency.query.with_entities(
-            MinistryAgency.ministry_code,
-            MinistryAgency.ministry_name
-        ).distinct().filter(
-            MinistryAgency.is_active == True
-        ).all()
-        
-        output = []
-        
-        for ministry_code, ministry_name in ministries:
-            # Get all agencies under this ministry
-            agencies = MinistryAgency.query.filter_by(
-                ministry_code=ministry_code
-            ).all()
-            
-            mda_names = set()
-            response_count = 0
-            total_budget = 0.0
-            completion_scores = []
-            
-            for agency in agencies:
-                # Get responses for this agency
-                responses = SurveyResponse.query.filter_by(
-                    ministry_agency_id=agency.id
-                ).all()
-                
-                for resp in responses:
-                    mda_names.add(agency.agency_name)
-                    response_count += 1
-                    total_budget += float(resp.project_appropriation_2024 or 0)
-                    if resp.percentage_completed:
-                        completion_scores.append(float(resp.percentage_completed))
-            
-            # Also include responses that don't have ministry_agency_id but match by name
-            if ministry_name:
-                # This handles legacy data or unmatched data
-                additional_responses = SurveyResponse.query.filter(
-                    SurveyResponse.parent_ministry == ministry_name,
-                    SurveyResponse.ministry_agency_id.is_(None)
-                ).all()
-                
-                for resp in additional_responses:
-                    response_count += 1
-                    total_budget += float(resp.project_appropriation_2024 or 0)
-                    if resp.percentage_completed:
-                        completion_scores.append(float(resp.percentage_completed))
-                    if resp.mda_name:
-                        mda_names.add(resp.mda_name)
-            
-            avg_completion = sum(completion_scores) / len(completion_scores) if completion_scores else 0
-            
-            output.append({
-                "ministry_name": ministry_name,
-                "ministry_code": ministry_code,
-                "mda_count": len(mda_names),
-                "total_responses": response_count,
-                "total_budget": total_budget,
-                "avg_completion": round(avg_completion, 2)
-            })
-        
-        # Sort by total responses
-        output.sort(key=lambda x: x['total_responses'], reverse=True)
-        
-        return jsonify({"success": True, "data": output})
-        
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
-
 @api_bp.get("/compliance/mda")
 def get_mda_compliance():
-    """Returns MDA-level compliance data for visualization."""
-    try:        
-        compliance_data = ComplianceMetrics.calculate_mda_compliance_data()
+    """Returns MDA-level compliance data"""
+    try:
+        analytics = AnalyticsService()
+        compliance_data = analytics.mda_compliance()
         
         return jsonify({
             "success": True,
-            "data": compliance_data
+            "data": compliance_data,
+            "summary": {
+                'total_expected': sum(item['expected_projects'] for item in compliance_data),
+                'total_reported': sum(item['reported_projects'] for item in compliance_data),
+                'overall_compliance': round(
+                    (sum(item['reported_projects'] for item in compliance_data) / 
+                     sum(item['expected_projects'] for item in compliance_data) * 100)
+                    if sum(item['expected_projects'] for item in compliance_data) > 0 else 0,
+                    2
+                )
+            }
         })
     except Exception as e:
         current_app.logger.error(f"MDA compliance error: {str(e)}")
-        return jsonify({
-            "success": False,
-            "message": f"Error calculating compliance: {str(e)}"
-        }), 500
+        return jsonify({"success": False, "message": str(e)}), 500
 
-@api_bp.get("/compliance/mda/<mda_name>/projects")
-def get_mda_projects(mda_name):
-    """Get detailed project information for a specific MDA"""
+
+@api_bp.get("/compliance/mda/<agency_code>/projects")
+def get_mda_projects(agency_code):
+    """Get project details for a specific MDA"""
     try:
-        # Decode URL-encoded MDA name
-        import urllib.parse
-        mda_name = urllib.parse.unquote(mda_name)
+        analytics = AnalyticsService()
+        projects = analytics.mda_projects(agency_code)
         
-        # First, get the MDA's basic information
-        mda_responses = SurveyResponse.query.filter_by(
-            mda_name=mda_name
-        ).all()
+        canonical_code = AgencyConsolidationRules.get_canonical_agency_code(agency_code)
         
-        if not mda_responses:
-            return jsonify({
-                "success": False,
-                "message": f"No data found for MDA: {mda_name}"
-            }), 404
+        from app.models import MinistryAgency
+        agency = MinistryAgency.query.filter_by(
+            agency_code=canonical_code,
+            is_active=True
+        ).first()
         
-        # Get parent ministry from first response
-        parent_ministry = mda_responses[0].parent_ministry
-        
-        # Collect all unique ERGP codes from this MDA
-        reported_ergp_codes = set()
-        project_details = []
-        
-        # Process reported projects
-        for response in mda_responses:
-            if response.ergp_code:
-                reported_ergp_codes.add(response.ergp_code)
-                project_details.append({
-                    "project_code": response.ergp_code,
-                    "project_title": response.project_name or "Untitled Project",
-                    "budget_allocation": float(response.project_appropriation_2024 or 0),
-                    "reported": True,
-                    "percentage_completed": float(response.percentage_completed or 0),
-                    "amount_released": float(response.amount_released_2024 or 0),
-                    "project_status": response.project_status or "Unknown"
-                })
-        
-        # For demonstration, let's also include expected projects that weren't reported
-        # In a real implementation, you would query your budget database
-        expected_projects = []
-        
-        # This is a placeholder - you need to implement based on your budget data structure
-        try:
-            # If you have a BudgetProject model:
-            budget_projects = BudgetProject2024.query.filter_by(
-                mda_name=mda_name
-            ).all()
-            
-            for bp in budget_projects:
-                reported = bp.ergp_code in reported_ergp_codes
-                
-                # Only add if not already in our list
-                if not any(p["project_code"] == bp.ergp_code for p in project_details):
-                    project_details.append({
-                        "project_code": bp.ergp_code or f"BUDGET-{len(project_details)}",
-                        "project_title": bp.project_title or "Budget Project",
-                        "budget_allocation": float(bp.allocated_amount or 0),
-                        "reported": reported,
-                        "percentage_completed": 0,
-                        "amount_released": 0,
-                        "project_status": "Not Reported"
-                    })
-        except:
-            # Fallback: create sample data for demonstration
-            # You should replace this with actual budget data
-            sample_projects = [
-                {"code": "ERGP20241010", "title": "Border Community Infrastructure", "budget": 250000000},
-                {"code": "ERGP20241011", "title": "Rural Development Program", "budget": 150000000},
-                {"code": "ERGP12168299", "title": "Community Health Initiative", "budget": 100000000},
-            ]
-            
-            for sample in sample_projects:
-                if sample["code"] not in reported_ergp_codes:
-                    project_details.append({
-                        "project_code": sample["code"],
-                        "project_title": sample["title"],
-                        "budget_allocation": sample["budget"],
-                        "reported": False,
-                        "percentage_completed": 0,
-                        "amount_released": 0,
-                        "project_status": "Not Reported"
-                    })
-        
-        # Calculate summary statistics
-        total_expected = len(project_details)
-        total_reported = sum(1 for p in project_details if p["reported"])
-        total_budget = sum(p["budget_allocation"] for p in project_details)
-        reported_budget = sum(p["budget_allocation"] for p in project_details if p["reported"])
+        if not agency:
+            return jsonify({"success": False, "error": f"Agency not found: {agency_code}"}), 404
         
         return jsonify({
             "success": True,
-            "data": {
-                "mda_name": mda_name,
-                "parent_ministry": parent_ministry,
-                "summary": {
-                    "total_projects": total_expected,
-                    "reported_projects": total_reported,
-                    "total_budget": total_budget,
-                    "reported_budget": reported_budget,
-                    "compliance_rate": (total_reported / total_expected * 100) if total_expected > 0 else 0
-                },
-                "projects": sorted(project_details, key=lambda x: (not x["reported"], x["project_code"]))
+            "data": projects,
+            "count": len(projects),
+            "agency_info": {
+                "agency_code": canonical_code,
+                "agency_name": agency.agency_name,
+                "ministry_name": agency.ministry_name,
+                "is_consolidated": canonical_code != agency_code
             }
         })
-        
     except Exception as e:
-        current_app.logger.error(f"MDA projects error for {mda_name}: {str(e)}")
-        return jsonify({
-            "success": False,
-            "message": f"Error fetching project details: {str(e)}"
-        }), 500
+        current_app.logger.error(f"MDA projects error: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
+
+@api_bp.get("/compliance/ministry")
+def get_ministry_compliance():
+    """Get ministry-level compliance data"""
+    try:
+        analytics = AnalyticsService()
+        ministry_data = analytics.ministry_compliance()
+        
+        return jsonify({
+            "success": True,
+            "data": ministry_data,
+            "total_ministries": len(ministry_data)
+        })
+    except Exception as e:
+        current_app.logger.error(f"Ministry compliance error: {str(e)}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 #@api_bp.get("/compliance/ministry")
-def get_ministry_compliance():
+def get_ministry_compliance_():
     """Groups individual MDA responses into high-level Ministry buckets"""
     try:
         all_responses = SurveyResponse.query.all()
@@ -735,3 +605,24 @@ def get_export_filters():
             'success': False,
             'error': str(e)
         }), 500
+    
+
+@api_bp.route('/api/admin/link-responses', methods=['POST'])
+def link_survey_responses():
+    """Admin endpoint to link survey responses"""
+    try:
+        force_relink = request.json.get('force_relink', False) if request.json else False
+        results = ImprovedMinistryAgency.link_survey_responses(force_relink=force_relink)
+        
+        return jsonify({
+            'success': True,
+            'results': {
+                'exact_matches': results['linked'],
+                'fuzzy_matches': results['fuzzy'],
+                'unmatched': results['unmatched'],
+                'unmatched_details': results['unmatched_details'][:20]
+            }
+        })
+    except Exception as e:
+        current_app.logger.error(f"Link responses error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500

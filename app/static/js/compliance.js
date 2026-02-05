@@ -2,19 +2,23 @@
 let mdaTable;
 let ministryTable;
 
-// Tab functionality
+// Tab functionality - Updated for pill buttons
 function showTab(tabId) {
-    // Toggle Visibility
-    $('.tab-content').hide();
-    $(`#${tabId}`).show();
+    // Hide all tab panes
+    $('.tab-pane').removeClass('active').hide();
     
-    // Toggle Button Styles
-    $('.tab-link').removeClass('button-primary');
-    $(`[onclick="showTab('${tabId}')"]`).addClass('button-primary');
+    // Show selected tab pane
+    $(`#${tabId}`).addClass('active').show();
+    
+    // Remove active class from all pill buttons
+    $('.pill-btn').removeClass('active');
+    
+    // Add active class to clicked button
+    event.target.classList.add('active');
 }
 
 // Modal functionality
-function openModal(mdaName, expected, reported, complianceRate) {
+function openModal(mdaName, agencyCode, expected, reported, complianceRate) {
     // Set modal title and summary
     $('#modal-title').text(`Project Details: ${mdaName}`);
     $('#modal-mda-name').text(mdaName);
@@ -23,21 +27,21 @@ function openModal(mdaName, expected, reported, complianceRate) {
     $('#modal-compliance').html(getComplianceHTML(complianceRate));
     
     // Show modal
-    // $('#project-modal').show();
-    // $('body').addClass('modal-open');
+    $('#project-modal').addClass('show').css('display', 'flex');
+    $('body').addClass('modal-open');
     
     // Load project details
-    loadMdaProjects(mdaName);
+    loadMdaProjects(agencyCode);
 }
 
 function closeModal() {
-    $('#project-modal').hide();
+    $('#project-modal').removeClass('show').css('display', 'none');
     $('body').removeClass('modal-open');
     $('#project-details-table tbody').empty();
 }
 
 // Load project details for a specific MDA
-function loadMdaProjects(mdaName) {
+function loadMdaProjects(agencyCode) {
     // Clear existing rows
     $('#project-details-table tbody').empty();
     
@@ -48,7 +52,7 @@ function loadMdaProjects(mdaName) {
     
     // Make API call to get project details
     $.ajax({
-        url: `/api/compliance/mda/${encodeURIComponent(mdaName)}/projects`,
+        url: `/api/compliance/mda/${encodeURIComponent(agencyCode)}/projects`,
         method: 'GET',
         success: function(response) {
             if (response.success && response.data) {
@@ -113,8 +117,7 @@ function getComplianceHTML(rate) {
 // Reset MDA filter
 function resetMdaFilter() {
     mdaTable.column(1).search('').draw();
-    $('#mda-tab h3').html('Project Compliance per MDA');
-    showTab('mda-tab');
+    $('#mda-tab .card h3').html('Project Compliance per MDA');
 }
 
 // Document ready
@@ -129,12 +132,7 @@ $(document).ready(function() {
             { 
                 data: 'mda_name',
                 render: function(data, type, row) {
-                    return `<span class="clickable-mda" onclick="openModal('${data.replace(/'/g, "\\'")}', 
-                            ${row.expected_projects}, 
-                            ${row.reported_projects}, 
-                            ${row.compliance_rate_pct})">
-                            ${data}
-                        </span>`;
+                    return `<span class="clickable-mda" onclick="openModal('${data.replace(/'/g, "\\'")}', '${row.agency_code}', ${row.expected_projects}, ${row.reported_projects}, ${row.compliance_rate_pct})">${data}</span>`;
                 }
             },
             { 
@@ -157,9 +155,13 @@ $(document).ready(function() {
                 data: 'compliance_rate_pct', 
                 render: function(data) {
                     return getComplianceHTML(data);
-                }
+                },
+                className: 'dt-body-center'
             }
-        ]
+        ],
+        order: [[5, 'desc']], // Sort by compliance rate descending
+        pageLength: 25,
+        responsive: true
     });
 
     // 2. Initialize Ministry Table
@@ -174,20 +176,27 @@ $(document).ready(function() {
                 className: 'clickable-min' 
             },
             { 
-                data: 'mda_count' 
+                data: 'mda_count',
+                className: 'dt-body-center'
             },
             { 
-                data: 'total_responses' 
+                data: 'total_responses',
+                className: 'dt-body-center'
             },
             { 
                 data: 'total_budget', 
-                render: $.fn.dataTable.render.number(',', '.', 2, '₦') 
+                render: $.fn.dataTable.render.number(',', '.', 2, '₦'),
+                className: 'dt-body-right'
             },
             { 
                 data: 'avg_completion', 
-                render: d => `<strong>${d}%</strong>` 
+                render: d => `<strong>${d}%</strong>`,
+                className: 'dt-body-center'
             }
-        ]
+        ],
+        order: [[4, 'desc']], // Sort by avg completion descending
+        pageLength: 25,
+        responsive: true
     });
 
     // 3. Drill-Down Handler for Ministry Table
@@ -200,27 +209,49 @@ $(document).ready(function() {
         // Filter the MDA table by the hidden parent_ministry column
         mdaTable.column(1).search(minName).draw();
 
-        showTab('mda-tab');
-        $('#mda-tab h3').html(
-            `Agencies under: ${minName} <button class="button" onclick="resetMdaFilter()">Clear Filter</button>`
+        // Switch to MDA tab
+        $('.tab-pane').removeClass('active').hide();
+        $('#mda-tab').addClass('active').show();
+        $('.pill-btn').removeClass('active');
+        $('.pill-btn').first().addClass('active');
+
+        // Update heading with filter
+        $('#mda-tab .card h3').html(
+            `Agencies under: ${minName} <button class="btn btn-secondary" onclick="resetMdaFilter()" style="margin-left: 10px; font-size: 12px; padding: 6px 12px;">Clear Filter</button>`
         );
     });
 
-    // 4. Close modal when clicking X or outside modal
-    $('.close-modal').on('click', closeModal);
+    // 4. Close modal when clicking X
+    $('.close').on('click', closeModal);
     
+    // 5. Close modal when clicking outside
     $(window).on('click', function(event) {
         const modal = $('#project-modal');
-        if (event.target === modal[0]) {
+        if ($(event.target).hasClass('modal')) {
             closeModal();
         }
     });
     
-    // 5. Close modal with Escape key
+    // 6. Close modal with Escape key
     $(document).on('keydown', function(event) {
-        if (event.key === 'Escape') {
+        if (event.key === 'Escape' || event.keyCode === 27) {
             closeModal();
         }
+    });
+    
+    // 7. Initialize pill button click handlers
+    $('.pill-btn').on('click', function(e) {
+        const targetTab = $(this).attr('onclick').match(/'([^']+)'/)[1];
+        
+        // Remove active from all
+        $('.pill-btn').removeClass('active');
+        $('.tab-pane').removeClass('active').hide();
+        
+        // Add active to clicked
+        $(this).addClass('active');
+        $(`#${targetTab}`).addClass('active').show();
+        
+        e.preventDefault();
     });
     
     // Expose functions to global scope
