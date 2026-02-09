@@ -62,8 +62,8 @@ def scheduled_fetch():
             print(f"🔄 Starting scheduled fetch at {datetime.now()}", file=sys.stderr)
             print("=" * 60, file=sys.stderr)
             
-            count1 = DataFetcher.fetch_and_store_survey("survey1")
-            count2 = DataFetcher.fetch_and_store_survey("survey2")
+            count1 = DataFetcher.fetch_and_store_survey_smart("survey1")
+            count2 = DataFetcher.fetch_and_store_survey_smart("survey2")
             
             last_fetch_time = datetime.now()
             
